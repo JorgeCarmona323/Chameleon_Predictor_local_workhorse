@@ -1,0 +1,49 @@
+# Data files (large, not tracked)
+*.csv
+*.sdf
+*.sdf.gz
+*.pkl
+*.h5
+
+# But DO track these small ones
+!data/.gitkeep
+!data/reference_set.csv
+!data/config.json
+!results/.gitkeep
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.so
+
+# Conda/pip
+.conda/
+.venv/
+env/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+*.Zone.Identifier
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Results (generated — optional to track)
+results/
+figures/
+
+# Large conformer files
+conformer_descriptors_raw.csv

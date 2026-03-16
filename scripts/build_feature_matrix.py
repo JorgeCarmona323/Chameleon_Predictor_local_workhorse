@@ -125,7 +125,7 @@ def build(pampa_csv: str, conformers_csv: str | None, outdir: Path) -> None:
     feature_groups = {
         "2D_baseline": [
             "MolWt", "MolLogP", "TPSA", "NumHAcceptors", "NumHDonors",
-            "NumRotatableBonds", "FractionCSP3", "RingCount",
+            "NumRotatableBonds", "RingCount",
         ],
         "DB_delta": ["delta_3DPSA_db", "H2O_3DPSA", "CHCl3_3DPSA"],
         "Tier1_delta": [
@@ -141,6 +141,29 @@ def build(pampa_csv: str, conformers_csv: str | None, outdir: Path) -> None:
 
     import json
     (outdir / "feature_groups.json").write_text(json.dumps(feature_groups, indent=2))
+
+    # ── Zero-variance feature removal ─────────────────────────────────────────
+    # Drop only columns where every single row is exactly the same value.
+    # Low-variance discrete features (e.g., RingCount with values {1, 2}) are
+    # intentionally preserved: discrete 3D descriptors can capture non-linear
+    # "threshold effects" where small structural shifts (e.g., incrementing ring
+    # counts or rotatable bonds) may act as binary gatekeepers for membrane
+    # permeability — a "Domino theory" where one extra ring flips a compound
+    # from impermeable to permeable. Dropping these would erase that signal.
+    all_feat_cols = list(dict.fromkeys(f for grp in feature_groups.values() for f in grp))
+    const_cols = [
+        c for c in all_feat_cols
+        if c in df.columns and df[c].dropna().nunique() <= 1
+    ]
+    if const_cols:
+        df.drop(columns=const_cols, inplace=True)
+        print(f"\nDropped {len(const_cols)} zero-variance descriptor(s): {const_cols}")
+        # Remove from feature_groups so downstream scripts aren't surprised
+        for grp in feature_groups:
+            feature_groups[grp] = [f for f in feature_groups[grp] if f not in const_cols]
+        (outdir / "feature_groups.json").write_text(json.dumps(feature_groups, indent=2))
+    else:
+        print("\nZero-variance check: no constant descriptor columns found.")
 
     # ── Save full feature matrix ──────────────────────────────────────────────
     out_path = outdir / "feature_matrix.csv"

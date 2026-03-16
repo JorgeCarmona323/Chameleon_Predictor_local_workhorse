@@ -1,64 +1,97 @@
 """
 04_umap_visualization.py
 ------------------------
-UMAP of CycPeptMPDB PAMPA subset colored by LogPexp (continuous) and
-permeability class (binary), with CycloA reference overlay.
+Dual-track clustering workflow for CycPeptMPDB PAMPA subset.
 
-Two UMAP panels:
-  Panel A — 2D descriptors (MolWt, MolLogP, TPSA, HBA, HBD, RotBonds, CSP3)
-  Panel B — 3D Δ features  (delta_3DPSA_db, delta_psa3d, delta_hb, delta_Rg,
-                              delta_NPR1, delta_NPR2, psa3d_spread)
+Common ground:
+  RobustScaler → PCA → cosine distance matrix (input to both tracks)
 
-For each panel: cosine metric, Leiden clustering on UMAP kNN graph.
-Hit enrichment per cluster reported.
+Track A — K-Medoids (structural archetypes):
+  Forces data into N_KMEDOIDS clusters using cosine distance.
+  Each medoid is a real molecule representing its archetype.
+  Goal: identify which 3D shape archetypes are permeable winners.
+
+Track B — UMAP + HDBSCAN (natural signal):
+  UMAP projects PCA-space into 2D using cosine metric.
+  HDBSCAN on 2D UMAP coordinates finds density-based clusters.
+  Noise points (label=-1) are explicitly modeled — not forced into clusters.
+  Goal: find permeability islands where data naturally clumps.
+
+Visualization per panel (3 subplots, same UMAP layout):
+  Plot 1 — K-Medoid cluster IDs (medoids marked ★)
+  Plot 2 — HDBSCAN cluster IDs (noise in grey)
+  Plot 3 — PAMPA LogPexp (the clincher)
+
+Convergence analysis:
+  Where K-Medoids and HDBSCAN agree on high-permeability regions
+  = double-validated permeability islands.
+  If HDBSCAN labels a molecule "noise" but K-Medoids puts it in a
+  permeable archetype → the molecule has the right average shape
+  but lacks the specific 3D density to cross the membrane.
 
 Usage:
   python umap_visualization.py [--matrix results/feature_matrix.csv]
                                 [--outdir results]
+                                [--k 8]
 """
 
 import argparse
 import warnings
 from pathlib import Path
 
-try:
-    import igraph as ig
-    import leidenalg
-    _LEIDEN_AVAILABLE = True
-except ImportError:
-    _LEIDEN_AVAILABLE = False
-    print("WARNING: leidenalg/igraph not available — Leiden clustering will be skipped.")
-    print("  Fix: pip install leidenalg igraph --no-binary leidenalg")
-
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
 import numpy as np
 import pandas as pd
 import umap
 from matplotlib.colors import Normalize
-from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import adjusted_rand_score, silhouette_score
 from sklearn.preprocessing import RobustScaler
 
 warnings.filterwarnings("ignore")
 
-PAMPA_THRESHOLD = -6.0  # Jiang et al. 2023, J. Chem. Inf. Model. — CycPeptMPDB standard cutoff
-RANDOM_STATE = 42
+# ── Optional dependencies ──────────────────────────────────────────────────────
+try:
+    from sklearn_extra.cluster import KMedoids
+    _KMEDOIDS_AVAILABLE = True
+except ImportError:
+    _KMEDOIDS_AVAILABLE = False
+    print("WARNING: sklearn-extra not installed — K-Medoids unavailable.")
+    print("  Fix: pip install scikit-learn-extra")
 
-# UMAP parameters — optimized for macrocycle chemical space
+try:
+    import hdbscan as hdbscan_lib
+    _HDBSCAN_AVAILABLE = True
+except ImportError:
+    _HDBSCAN_AVAILABLE = False
+    print("WARNING: hdbscan not installed — HDBSCAN unavailable.")
+    print("  Fix: pip install hdbscan")
+
+# ── Constants ──────────────────────────────────────────────────────────────────
+PAMPA_THRESHOLD = -6.0
+RANDOM_STATE    = 42
+CYCLOA_IDS      = {1, 22, 932, 981, 1822, 1862, 2356, 7188, 7353}
+N_KMEDOIDS      = 8    # override with --k argument
+
 UMAP_PARAMS = dict(
-    n_neighbors=30,
-    min_dist=0.15,
-    n_components=2,
-    metric="cosine",
-    random_state=RANDOM_STATE,
-    low_memory=False,
+    n_neighbors  = 30,
+    min_dist     = 0.15,
+    n_components = 2,
+    metric       = "cosine",
+    random_state = RANDOM_STATE,
+    low_memory   = False,
+)
+
+HDBSCAN_PARAMS = dict(
+    min_cluster_size       = 50,
+    min_samples            = 10,
+    cluster_selection_method = "eom",
+    metric                 = "euclidean",  # on 2D UMAP coordinates
 )
 
 FEATURE_PANELS = {
     "Panel_A_2D": [
         "MolWt", "MolLogP", "TPSA", "NumHAcceptors",
-        "NumHDonors", "NumRotatableBonds", "FractionCSP3", "RingCount",
+        "NumHDonors", "NumRotatableBonds", "RingCount",
     ],
     "Panel_B_3D_delta": [
         "delta_3DPSA_db", "delta_psa3d", "delta_hb", "delta_Rg",
@@ -71,260 +104,439 @@ FEATURE_PANELS = {
     ],
 }
 
-# CycloA IDs in CycPeptMPDB (from reference_set)
-CYCLOA_IDS = {1, 22, 932, 981, 1822, 1862, 2356, 7188, 7353}
 
+# ── Enrichment helpers ─────────────────────────────────────────────────────────
 
-def run_leiden(reducer: umap.UMAP) -> np.ndarray:
-    """Run Leiden clustering on UMAP's internal kNN graph.
-
-    Use upper-triangle only to avoid duplicate edges from the symmetric matrix
-    (each undirected edge appears as both (i,j) and (j,i) in the full COO).
-    """
-    from scipy.sparse import triu
-    cx = triu(reducer.graph_).tocoo()
-    sources = cx.row.tolist()
-    targets = cx.col.tolist()
-    weights = cx.data.tolist()
-    g = ig.Graph(
-        n=reducer.graph_.shape[0],
-        edges=list(zip(sources, targets)),
-        edge_attrs={"weight": weights},
-    )
-    partition = leidenalg.find_partition(
-        g, leidenalg.ModularityVertexPartition,
-        weights="weight", seed=RANDOM_STATE,
-    )
-    return np.array(partition.membership)
-
-
-def hit_enrichment(labels: np.ndarray, permeable: np.ndarray) -> pd.DataFrame:
-    """Compute hit enrichment ratio per cluster.
-
-    Both labels and permeable must be numpy arrays with positional alignment
-    (not pandas Series) to avoid index-alignment bugs.
-    """
-    permeable = np.asarray(permeable)  # ensure positional indexing
-    total_perm = permeable.sum()
-    total = len(permeable)
-    bg_rate = total_perm / total if total > 0 else 0
-
+def enrichment_table(labels: np.ndarray, permeable: np.ndarray,
+                     noise_label: int = None) -> pd.DataFrame:
+    """Permeability enrichment ratio per cluster label."""
+    bg_rate = permeable.mean()
     rows = []
-    for lab in np.unique(labels):
+    for lab in sorted(np.unique(labels)):
         mask = labels == lab
-        n_cluster = mask.sum()
-        n_hits = permeable[mask].sum()
-        cluster_rate = n_hits / n_cluster if n_cluster > 0 else 0
-        enrichment = cluster_rate / bg_rate if bg_rate > 0 else 0
+        rate = permeable[mask].mean()
         rows.append({
-            "cluster": int(lab),
-            "n_cluster": int(n_cluster),
-            "n_permeable": int(n_hits),
-            "hit_rate": round(float(cluster_rate), 4),
-            "enrichment_ratio": round(float(enrichment), 3),
+            "cluster":     int(lab),
+            "label":       "noise" if lab == noise_label else f"C{lab}",
+            "n":           int(mask.sum()),
+            "n_permeable": int(permeable[mask].sum()),
+            "perm_rate":   round(float(rate), 3),
+            "enrichment":  round(float(rate / bg_rate), 3) if bg_rate > 0 else np.nan,
         })
-    return pd.DataFrame(rows).sort_values("enrichment_ratio", ascending=False)
+    return pd.DataFrame(rows).sort_values("enrichment", ascending=False)
 
 
-def make_umap_panel(
-    df_panel: pd.DataFrame,
+def convergence_analysis(km_labels: np.ndarray, hdb_labels: np.ndarray,
+                         permeable: np.ndarray) -> pd.DataFrame:
+    """
+    Cross-tabulate K-Medoid vs HDBSCAN clusters.
+    Flags double-validated permeability islands where both tracks
+    agree on above-background permeable enrichment (>1.2× background).
+    """
+    bg_rate = permeable.mean()
+    rows = []
+    for km_lab in np.unique(km_labels):
+        km_mask = km_labels == km_lab
+        km_rate = permeable[km_mask].mean()
+
+        # Dominant HDBSCAN cluster within this K-Medoid region (ignoring noise)
+        hdb_in_km = hdb_labels[km_mask]
+        non_noise  = hdb_in_km[hdb_in_km != -1]
+        if len(non_noise):
+            dominant_hdb = int(pd.Series(non_noise).mode().iloc[0])
+            hdb_mask = hdb_labels == dominant_hdb
+            hdb_rate = permeable[hdb_mask].mean()
+        else:
+            dominant_hdb = -1
+            hdb_rate     = np.nan
+
+        # Noise analysis: molecules K-Medoids calls permeable but HDBSCAN calls noise
+        noise_in_km = (hdb_in_km == -1).sum()
+
+        both_enriched = (
+            km_rate > bg_rate * 1.2
+            and dominant_hdb != -1
+            and not np.isnan(hdb_rate)
+            and hdb_rate > bg_rate * 1.2
+        )
+        rows.append({
+            "km_cluster":            int(km_lab),
+            "km_n":                  int(km_mask.sum()),
+            "km_perm_rate":          round(float(km_rate), 3),
+            "km_enrichment":         round(float(km_rate / bg_rate), 3),
+            "dominant_hdb_cluster":  dominant_hdb,
+            "hdb_perm_rate":         round(float(hdb_rate), 3) if not np.isnan(hdb_rate) else None,
+            "noise_in_km_region":    int(noise_in_km),
+            "double_validated":      both_enriched,
+        })
+    return pd.DataFrame(rows).sort_values("km_perm_rate", ascending=False)
+
+
+# ── UMAP stability check ───────────────────────────────────────────────────────
+
+STABILITY_SEEDS   = [42, 1, 7, 99, 314]   # 5 seeds → 10 pairwise ARI comparisons
+STABILITY_ARI_MIN = 0.85                   # minimum acceptable pairwise ARI
+
+def check_umap_stability(X_red: np.ndarray, outdir: Path, panel_name: str) -> float:
+    """
+    Run UMAP + HDBSCAN with STABILITY_SEEDS seeds and compute pairwise ARI
+    on non-noise points only.
+
+    Rationale: HDBSCAN clusters are computed on the 2D UMAP coordinates, so
+    they inherit any instability in the UMAP layout.  If the permeability
+    islands shift between seeds, HDBSCAN cluster boundaries shift with them
+    and any scientific claim based on those clusters becomes unreliable.
+    ARI is evaluated only on non-noise points because noise assignment
+    (label=-1) naturally varies across seeds — penalising that would
+    artificially tank ARI for otherwise stable cluster cores.
+
+    Returns the minimum pairwise ARI across all seed pairs.
+    Prints a WARNING if any pair is below STABILITY_ARI_MIN (0.85).
+    """
+    if not _HDBSCAN_AVAILABLE:
+        print("  [Stability] Skipped — hdbscan not installed.")
+        return np.nan
+
+    print(f"\n  [Stability] Running UMAP×{len(STABILITY_SEEDS)} seeds "
+          f"(ARI threshold = {STABILITY_ARI_MIN}) ...")
+
+    all_labels = []
+    all_valid  = []   # boolean mask: non-noise for each seed run
+
+    for seed in STABILITY_SEEDS:
+        params = {**UMAP_PARAMS, "random_state": seed}
+        emb    = umap.UMAP(**params).fit_transform(X_red)
+        lbl    = hdbscan_lib.HDBSCAN(**HDBSCAN_PARAMS).fit_predict(emb)
+        all_labels.append(lbl)
+        all_valid.append(lbl != -1)
+
+    # Pairwise ARI restricted to points that are non-noise in BOTH runs
+    ari_values = []
+    n = len(STABILITY_SEEDS)
+    for i in range(n):
+        for j in range(i + 1, n):
+            shared = all_valid[i] & all_valid[j]
+            if shared.sum() < 20:
+                continue   # too few shared non-noise points to be meaningful
+            ari = adjusted_rand_score(
+                all_labels[i][shared],
+                all_labels[j][shared],
+            )
+            ari_values.append(ari)
+
+    if not ari_values:
+        print("  [Stability] Could not compute ARI — all HDBSCAN runs returned noise only.")
+        return np.nan
+
+    min_ari  = float(np.min(ari_values))
+    mean_ari = float(np.mean(ari_values))
+    print(f"  [Stability] Pairwise ARI — min={min_ari:.3f}  mean={mean_ari:.3f}  "
+          f"n_pairs={len(ari_values)}")
+
+    if min_ari < STABILITY_ARI_MIN:
+        print(
+            f"  *** WARNING: UMAP layout unstable for {panel_name} ***\n"
+            f"  Min pairwise ARI={min_ari:.3f} < {STABILITY_ARI_MIN}.\n"
+            f"  HDBSCAN cluster boundaries shift between seeds — do not\n"
+            f"  interpret specific cluster assignments as scientific evidence.\n"
+            f"  Consider increasing n_neighbors (currently "
+            f"{UMAP_PARAMS['n_neighbors']}) or min_cluster_size."
+        )
+    else:
+        print(f"  [Stability] PASS — layout stable (min ARI {min_ari:.3f} >= {STABILITY_ARI_MIN})")
+
+    # Save ARI matrix to CSV for reporting
+    ari_path = outdir / "figures" / f"{panel_name}_umap_stability.csv"
+    ari_path.parent.mkdir(parents=True, exist_ok=True)
+    rows = []
+    idx  = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            shared = all_valid[i] & all_valid[j]
+            if shared.sum() < 20:
+                rows.append({"seed_i": STABILITY_SEEDS[i], "seed_j": STABILITY_SEEDS[j],
+                             "ARI": None, "n_shared_non_noise": int(shared.sum())})
+            else:
+                rows.append({"seed_i": STABILITY_SEEDS[i], "seed_j": STABILITY_SEEDS[j],
+                             "ARI": round(ari_values[idx], 4),
+                             "n_shared_non_noise": int(shared.sum())})
+                idx += 1
+    pd.DataFrame(rows).to_csv(ari_path, index=False)
+    print(f"  Stability ARI table saved: {ari_path}")
+
+    return min_ari
+
+
+# ── Main panel function ────────────────────────────────────────────────────────
+
+def make_dual_track_panel(
+    df: pd.DataFrame,
     panel_name: str,
     features: list,
     outdir: Path,
+    n_kmedoids: int = N_KMEDOIDS,
 ) -> dict:
-    """Fit UMAP, run Leiden, plot, return metrics dict."""
-
-    available = [f for f in features if f in df_panel.columns and df_panel[f].notna().sum() > 50]
-    if not available:
-        print(f"  {panel_name}: insufficient features, skipping")
+    """
+    Full dual-track pipeline for one feature panel.
+    Returns a metrics dict for the summary table.
+    """
+    available = [
+        f for f in features
+        if f in df.columns and df[f].notna().sum() > 50
+    ]
+    if len(available) < 2:
+        print(f"  {panel_name}: only {len(available)} features available — skipping")
         return {}
 
-    # Drop rows missing any feature
-    sub = df_panel[available + ["PAMPA", "permeable", "ID"]].dropna().copy()
+    sub = df[available + ["PAMPA", "permeable", "ID"]].dropna().copy()
     print(f"\n── {panel_name} ──")
-    print(f"  Features: {available}")
-    print(f"  Compounds: {len(sub)}")
+    print(f"  Features  : {available}")
+    print(f"  Compounds : {len(sub):,}")
 
-    X = sub[available].values
+    X      = sub[available].values
     y_cont = sub["PAMPA"].values
-    y_bin  = sub["permeable"].values
+    y_bin  = sub["permeable"].values.astype(int)
 
-    # ── Scale first — critical before any distance-based method ─────────────
-    # RobustScaler: centers to median, scales by IQR.
-    # Correct for dense continuous descriptors with different magnitudes
-    # (e.g., MolWt ~600-1400 Da vs. MolLogP ~0-8 vs. delta_psa3d ~0-100 Å²).
-    # Prevents large-magnitude features from dominating cosine distances.
-    scaler = RobustScaler()
-    X_scaled = scaler.fit_transform(X)
+    # ── RobustScaler ─────────────────────────────────────────────────────────
+    # RobustScaler (median=0, IQR=1) is more appropriate than StandardScaler
+    # for cyclic peptides: the PAMPA subset contains outlier compounds with
+    # extreme MW, logP, or ring counts that would inflate StandardScaler's mean
+    # and standard deviation, distorting cosine distances for the majority.
+    # RobustScaler is resistant to these outliers while still neutralizing
+    # unit differences across heterogeneous 3D descriptors.
+    X_scaled = RobustScaler().fit_transform(X)
 
-    # ── PCA dimensionality reduction (only if n_features > 10) ──────────────
-    # PCA on already-scaled dense continuous data is the correct choice here.
-    # TruncatedSVD is for sparse matrices (fingerprints); PCA is for scaled
-    # dense continuous descriptors like our Δ features.
-    # Silhouette score is then computed on PCA coords — NOT on 2D UMAP coords,
-    # because UMAP distorts inter-cluster distances in the 2D projection.
-    if X_scaled.shape[1] > 10:
-        n_pca = min(50, X_scaled.shape[1] - 1, X_scaled.shape[0] - 1)
-        pca = PCA(n_components=n_pca, random_state=RANDOM_STATE)
-        X_reduced = pca.fit_transform(X_scaled)
-        var_exp = pca.explained_variance_ratio_.cumsum()[-1]
-        print(f"  PCA({n_pca}): {100*var_exp:.1f}% cumulative variance explained")
-        # Find elbow: n_components for 90% variance
-        n_90 = np.searchsorted(pca.explained_variance_ratio_.cumsum(), 0.90) + 1
-        print(f"  PCA components for 90% variance: {n_90}")
+    # ── PCA intentionally omitted ─────────────────────────────────────────────
+    # Given the curated nature of the 12-feature descriptor panel, PCA was
+    # omitted to preserve the physical interpretability of individual 3D
+    # gatekeepers during clustering. With ≤12 features, PCA would compress
+    # physically meaningful axes (e.g., ΔPSA, ΔHB, ΔRg) into abstract
+    # components, making it impossible to ask "which descriptor drove this
+    # cluster's permeability?" — the core scientific question.
+    X_red = X_scaled
+
+    # ── Track A: K-Medoids on PCA-cosine distance ────────────────────────────
+    print(f"\n  [Track A] K-Medoids (k={n_kmedoids}, metric=cosine) ...")
+    km_labels    = np.zeros(len(sub), dtype=int)
+    medoid_idx   = []
+    sil_km       = np.nan
+
+    if _KMEDOIDS_AVAILABLE:
+        km = KMedoids(
+            n_clusters   = n_kmedoids,
+            metric       = "cosine",
+            method       = "alternate",   # fast for large n
+            random_state = RANDOM_STATE,
+        )
+        km_labels  = km.fit_predict(X_red)
+        medoid_idx = list(km.medoid_indices_)
+        if len(np.unique(km_labels)) > 1:
+            sil_km = silhouette_score(X_red, km_labels, metric="cosine")
+        print(f"  K-Medoids done. Silhouette (cosine, PCA coords): "
+              f"{sil_km:.4f}" if not np.isnan(sil_km) else "  K-Medoids done.")
+        # Report medoid permeability
+        for idx in medoid_idx:
+            cid = int(sub.iloc[idx]["ID"])
+            perm = "permeable" if y_bin[idx] else "impermeable"
+            print(f"    Medoid cluster {km_labels[idx]}: ID={cid}  PAMPA={y_cont[idx]:.2f}  {perm}")
     else:
-        X_reduced = X_scaled
-        print(f"  Skipping PCA ({X_scaled.shape[1]} features < 10 — using scaled features directly)")
+        print("  K-Medoids skipped (scikit-learn-extra not installed)")
 
-    # UMAP fit
-    print(f"  Fitting UMAP ...")
-    reducer = umap.UMAP(**UMAP_PARAMS)
-    embedding = reducer.fit_transform(X_reduced)
+    # ── UMAP stability check (before committing to main run) ─────────────────
+    # Runs UMAP+HDBSCAN across 5 seeds and computes pairwise ARI on non-noise
+    # points.  If min ARI < 0.85 the layout is unstable and HDBSCAN cluster
+    # boundaries should not be used as scientific evidence.
+    stability_ari = check_umap_stability(X_red, outdir, panel_name)
 
-    # Leiden clustering on UMAP kNN graph (falls back to single cluster if unavailable)
-    if _LEIDEN_AVAILABLE:
-        print("  Running Leiden clustering ...")
-        leiden_labels = run_leiden(reducer)
-        n_clusters = len(np.unique(leiden_labels))
-        print(f"  Leiden: {n_clusters} clusters")
+    # ── Track B: UMAP (same cosine/n_neighbors as conceptual kNN graph) ──────
+    print(f"\n  [Track B] UMAP (cosine, n_neighbors={UMAP_PARAMS['n_neighbors']}) ...")
+    reducer   = umap.UMAP(**UMAP_PARAMS)
+    embedding = reducer.fit_transform(X_red)
+    print("  UMAP done.")
+
+    # HDBSCAN on 2D UMAP coordinates
+    print(f"  [Track B] HDBSCAN (min_cluster_size={HDBSCAN_PARAMS['min_cluster_size']}) ...")
+    hdb_labels = np.full(len(sub), -1, dtype=int)
+    sil_hdb    = np.nan
+
+    if _HDBSCAN_AVAILABLE:
+        clusterer  = hdbscan_lib.HDBSCAN(**HDBSCAN_PARAMS)
+        hdb_labels = clusterer.fit_predict(embedding)
+        n_hdb      = len(set(hdb_labels) - {-1})
+        n_noise    = (hdb_labels == -1).sum()
+        print(f"  HDBSCAN: {n_hdb} clusters + {n_noise} noise "
+              f"({100*n_noise/len(sub):.1f}%)")
+        non_noise_mask = hdb_labels != -1
+        if len(set(hdb_labels[non_noise_mask])) > 1:
+            sil_hdb = silhouette_score(
+                X_red[non_noise_mask], hdb_labels[non_noise_mask], metric="cosine"
+            )
+            print(f"  Silhouette (HDBSCAN non-noise, cosine, PCA coords): {sil_hdb:.4f}")
     else:
-        leiden_labels = np.zeros(len(sub), dtype=int)
-        n_clusters = 1
-        print("  Leiden unavailable — assigning all compounds to cluster 0")
+        print("  HDBSCAN skipped (hdbscan not installed)")
 
-    # Silhouette on X_reduced (NOT on 2D embedding)
-    if n_clusters > 1:
-        sil = silhouette_score(X_reduced, leiden_labels, metric="cosine")
-        print(f"  Silhouette (cosine, SVD coords): {sil:.4f}")
+    # ── Enrichment tables ────────────────────────────────────────────────────
+    km_enrich  = enrichment_table(km_labels,  y_bin)
+    hdb_enrich = enrichment_table(hdb_labels, y_bin, noise_label=-1)
+    conv_df    = convergence_analysis(km_labels, hdb_labels, y_bin)
+
+    print("\n  K-Medoids enrichment (top 5):")
+    print(km_enrich.head(5).to_string(index=False))
+    print("\n  HDBSCAN enrichment (excl. noise, top 5):")
+    print(hdb_enrich[hdb_enrich["cluster"] != -1].head(5).to_string(index=False))
+
+    dv = conv_df[conv_df["double_validated"]]
+    if len(dv):
+        print(f"\n  Double-validated permeability islands ({len(dv)}):")
+        print(dv.to_string(index=False))
     else:
-        sil = np.nan
+        print("\n  No double-validated islands found.")
 
-    # Hit enrichment
-    enrich_df = hit_enrichment(leiden_labels, y_bin)
-    enrich_df["panel"] = panel_name
-    enrich_df.to_csv(outdir / f"{panel_name}_hit_enrichment.csv", index=False)
-    print(f"  Top enriched clusters:\n{enrich_df.head(5).to_string(index=False)}")
+    # ── Figure: 3 subplots ───────────────────────────────────────────────────
+    fig, axes = plt.subplots(1, 3, figsize=(22, 6))
+    cycloA_mask = sub["ID"].isin(CYCLOA_IDS).values
 
-    # ── Figure 1: LogPexp continuous colormap ─────────────────────────────────
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+    # --- Subplot 1: K-Medoids ---
+    ax1 = axes[0]
+    cmap_km = plt.cm.tab10
+    for lab in np.unique(km_labels):
+        mask     = km_labels == lab
+        pct_perm = 100 * y_bin[mask].mean()
+        ax1.scatter(
+            embedding[mask, 0], embedding[mask, 1],
+            c=[cmap_km(int(lab) % 10)], s=8, alpha=0.5, rasterized=True,
+            label=f"K{lab} n={mask.sum()} ({pct_perm:.0f}%)",
+        )
+    if medoid_idx:
+        ax1.scatter(
+            embedding[medoid_idx, 0], embedding[medoid_idx, 1],
+            s=200, marker="*", c="black", zorder=10,
+            edgecolors="white", linewidths=0.8, label="Medoids",
+        )
+    sil_str = f"sil={sil_km:.3f}" if not np.isnan(sil_km) else ""
+    ax1.set_title(f"Track A — K-Medoids (k={n_kmedoids})\n{sil_str}")
+    ax1.set_xlabel("UMAP 1"); ax1.set_ylabel("UMAP 2")
+    ax1.legend(fontsize=6, ncol=2, loc="upper right")
 
-    # Subplot 1: colored by PAMPA LogPexp
-    ax = axes[0]
-    norm = Normalize(vmin=np.percentile(y_cont, 5), vmax=np.percentile(y_cont, 95))
-    cmap = plt.cm.RdYlGn
+    # --- Subplot 2: HDBSCAN ---
+    ax2 = axes[1]
+    cmap_hdb    = plt.cm.tab20
+    unique_hdb  = sorted(set(hdb_labels))
+    for lab in unique_hdb:
+        mask     = hdb_labels == lab
+        pct_perm = 100 * y_bin[mask].mean()
+        if lab == -1:
+            ax2.scatter(
+                embedding[mask, 0], embedding[mask, 1],
+                c="lightgrey", s=5, alpha=0.3, rasterized=True,
+                label=f"Noise n={mask.sum()}",
+            )
+        else:
+            ax2.scatter(
+                embedding[mask, 0], embedding[mask, 1],
+                c=[cmap_hdb(int(lab) % 20)], s=8, alpha=0.6, rasterized=True,
+                label=f"C{lab} n={mask.sum()} ({pct_perm:.0f}%)",
+            )
+    sil_str2 = f"sil={sil_hdb:.3f}" if not np.isnan(sil_hdb) else ""
+    n_hdb_clusters = len(unique_hdb) - (1 if -1 in unique_hdb else 0)
+    ax2.set_title(f"Track B — HDBSCAN ({n_hdb_clusters} clusters)\n{sil_str2}")
+    ax2.set_xlabel("UMAP 1"); ax2.set_ylabel("UMAP 2")
+    ax2.legend(fontsize=6, ncol=2, loc="upper right")
 
-    sc = ax.scatter(
+    # --- Subplot 3: PAMPA LogPexp ---
+    ax3 = axes[2]
+    norm = Normalize(
+        vmin=np.percentile(y_cont, 5),
+        vmax=np.percentile(y_cont, 95),
+    )
+    sc = ax3.scatter(
         embedding[:, 0], embedding[:, 1],
-        c=y_cont, cmap=cmap, norm=norm,
+        c=y_cont, cmap=plt.cm.RdYlGn, norm=norm,
         s=8, alpha=0.5, rasterized=True,
     )
-    plt.colorbar(sc, ax=ax, label="PAMPA LogPexp (log cm/s)")
-
-    # CycloA overlay
-    cycloA_mask = sub["ID"].isin(CYCLOA_IDS)
+    plt.colorbar(sc, ax=ax3, label="PAMPA LogPexp (log cm/s)")
     if cycloA_mask.sum() > 0:
-        ax.scatter(
+        ax3.scatter(
             embedding[cycloA_mask, 0], embedding[cycloA_mask, 1],
-            s=120, marker="*", c="black", zorder=10,
-            edgecolors="white", linewidths=0.8, label=f"CycloA (n={cycloA_mask.sum()})",
+            s=150, marker="*", c="black", zorder=10,
+            edgecolors="white", linewidths=0.8,
+            label=f"CycloA (n={cycloA_mask.sum()})",
         )
-        ax.legend(fontsize=9)
-
-    ax.axhline(0, color="grey", linewidth=0.3, alpha=0.5)
-    ax.axvline(0, color="grey", linewidth=0.3, alpha=0.5)
-    ax.set_xlabel("UMAP 1")
-    ax.set_ylabel("UMAP 2")
-    ax.set_title(f"{panel_name}\nColored by PAMPA LogPexp")
-
-    # Subplot 2: colored by Leiden cluster
-    ax2 = axes[1]
-    cluster_cmap = plt.cm.tab20
-    colors_cluster = [cluster_cmap(l % 20) for l in leiden_labels]
-    ax2.scatter(
-        embedding[:, 0], embedding[:, 1],
-        c=colors_cluster, s=8, alpha=0.5, rasterized=True,
-    )
-    # Overlay permeable compounds
-    perm_mask = y_bin == 1
-    ax2.scatter(
-        embedding[perm_mask, 0], embedding[perm_mask, 1],
-        s=35, alpha=0.85, marker="^", c="#E41A1C",
-        edgecolors="darkred", linewidths=0.5, zorder=5,
-        label=f"Permeable (n={perm_mask.sum()})",
-    )
-    if cycloA_mask.sum() > 0:
-        ax2.scatter(
-            embedding[cycloA_mask, 0], embedding[cycloA_mask, 1],
-            s=120, marker="*", c="black", zorder=10,
-            edgecolors="white", linewidths=0.8, label="CycloA",
-        )
-    ax2.legend(fontsize=9)
-    ax2.set_xlabel("UMAP 1")
-    ax2.set_ylabel("UMAP 2")
-    ax2.set_title(f"{panel_name}\nLeiden clusters (n={n_clusters})")
+        ax3.legend(fontsize=9)
+    ax3.set_title("The Clincher — PAMPA LogPexp\n(validate cluster chemistry)")
+    ax3.set_xlabel("UMAP 1"); ax3.set_ylabel("UMAP 2")
 
     fig.suptitle(
-        f"{panel_name} | metric=cosine | Leiden | sil={sil:.3f}" if not np.isnan(sil)
-        else f"{panel_name} | metric=cosine | Leiden",
+        f"{panel_name}  |  Dual-Track: K-Medoids (archetypes) + HDBSCAN (natural signal)",
         fontsize=11, fontweight="bold",
     )
     plt.tight_layout()
     fig_path = outdir / "figures" / f"{panel_name}_umap.png"
     plt.savefig(fig_path, dpi=150, bbox_inches="tight")
     plt.close()
-    print(f"  Saved: {fig_path}")
+    print(f"\n  Figure saved: {fig_path}")
 
-    # ── Figure 2: LogPexp distribution by cluster (violin) ────────────────────
-    sub_plot = sub.copy()
-    sub_plot["cluster"] = leiden_labels
-    sub_plot["embedding_x"] = embedding[:, 0]
-    sub_plot["embedding_y"] = embedding[:, 1]
+    # ── Save per-compound embedding + cluster labels ─────────────────────────
+    sub_out = sub[["ID", "PAMPA", "permeable"]].copy()
+    sub_out["embedding_x"]      = embedding[:, 0]
+    sub_out["embedding_y"]      = embedding[:, 1]
+    sub_out["kmedoids_cluster"] = km_labels
+    sub_out["hdbscan_cluster"]  = hdb_labels
+    sub_out.to_csv(outdir / f"{panel_name}_embedding.csv", index=False)
 
-    # Save embedding with metadata
-    emb_path = outdir / f"{panel_name}_embedding.csv"
-    sub_plot[["ID", "PAMPA", "permeable", "cluster", "embedding_x", "embedding_y"]].to_csv(
-        emb_path, index=False
-    )
+    fig_dir = outdir / "figures"
+    km_enrich.to_csv(fig_dir / f"{panel_name}_kmedoids_enrichment.csv", index=False)
+    hdb_enrich.to_csv(fig_dir / f"{panel_name}_hdbscan_enrichment.csv", index=False)
+    conv_df.to_csv(fig_dir / f"{panel_name}_convergence.csv", index=False)
 
     return {
-        "panel": panel_name,
-        "n_compounds": len(sub),
-        "n_features": len(available),
-        "n_clusters": n_clusters,
-        "silhouette": round(float(sil), 4) if not np.isnan(sil) else None,
-        "max_enrichment": float(enrich_df["enrichment_ratio"].max()),
-        "permeable_total": int(perm_mask.sum()),
-        "cycloA_found": int(cycloA_mask.sum()),
+        "panel":                    panel_name,
+        "n_compounds":              len(sub),
+        "n_features":               len(available),
+        "n_kmedoids":               n_kmedoids if _KMEDOIDS_AVAILABLE else 0,
+        "sil_kmedoids":             round(float(sil_km), 4) if not np.isnan(sil_km) else None,
+        "n_hdbscan_clusters":       n_hdb_clusters,
+        "n_hdbscan_noise":          int((hdb_labels == -1).sum()),
+        "sil_hdbscan":              round(float(sil_hdb), 4) if not np.isnan(sil_hdb) else None,
+        "double_validated_islands": int(conv_df["double_validated"].sum()),
+        "cycloA_found":             int(cycloA_mask.sum()),
+        "umap_stability_min_ari":   round(stability_ari, 4) if not np.isnan(stability_ari) else None,
+        "umap_stability_pass":      bool(stability_ari >= STABILITY_ARI_MIN) if not np.isnan(stability_ari) else None,
     }
 
 
-def run(matrix_csv: str, outdir: Path) -> None:
+# ── Entry point ────────────────────────────────────────────────────────────────
+
+def run(matrix_csv: str, outdir: Path, n_kmedoids: int) -> None:
     (outdir / "figures").mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(matrix_csv, low_memory=False)
     df = df[df["PAMPA"].notna()].copy()
     df["permeable"] = (df["PAMPA"] >= PAMPA_THRESHOLD).astype(int)
-    print(f"Loaded {len(df)} compounds with PAMPA values")
+    print(f"Loaded {len(df):,} compounds with PAMPA values")
+    print(f"Permeable: {df['permeable'].sum():,} ({100*df['permeable'].mean():.1f}%)")
 
     summary_rows = []
     for panel_name, features in FEATURE_PANELS.items():
-        result = make_umap_panel(df, panel_name, features, outdir)
+        result = make_dual_track_panel(df, panel_name, features, outdir, n_kmedoids)
         if result:
             summary_rows.append(result)
 
     if summary_rows:
         summary = pd.DataFrame(summary_rows)
         summary.to_csv(outdir / "umap_panel_summary.csv", index=False)
-        print(f"\n── UMAP Panel Summary ──\n{summary.to_string(index=False)}")
+        print(f"\n── Summary ──\n{summary.to_string(index=False)}")
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="UMAP visualization for PAMPA analysis")
+    parser = argparse.ArgumentParser(description="Dual-track UMAP visualization")
     parser.add_argument("--matrix", "-m", default="results/feature_matrix.csv")
-    parser.add_argument("--outdir", "-o", default="results")
+    parser.add_argument("--outdir",  "-o", default="results")
+    parser.add_argument("--k",       "-k", type=int, default=N_KMEDOIDS,
+                        help=f"Number of K-Medoid archetypes (default: {N_KMEDOIDS})")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.matrix, Path(args.outdir))
+    run(args.matrix, Path(args.outdir), args.k)

@@ -1,0 +1,9 @@
+km_cluster,km_n,km_perm_rate,km_enrichment,dominant_hdb_cluster,hdb_perm_rate,noise_in_km_region,double_validated
+7,148,0.811,1.531,3,0.788,57,True
+4,325,0.8,1.511,3,0.788,52,True
+6,187,0.647,1.222,4,0.661,26,True
+2,124,0.573,1.081,0,0.339,47,False
+1,146,0.315,0.595,2,0.274,16,False
+0,119,0.269,0.508,2,0.274,38,False
+5,208,0.269,0.508,2,0.274,24,False
+3,146,0.253,0.479,2,0.274,54,False

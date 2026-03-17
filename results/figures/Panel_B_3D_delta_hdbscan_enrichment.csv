@@ -1,0 +1,4 @@
+cluster,label,n,n_permeable,perm_rate,enrichment
+0,C0,695,508,0.731,1.379
+-1,noise,226,114,0.504,0.952
+1,C1,481,121,0.252,0.475

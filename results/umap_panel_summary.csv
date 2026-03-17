@@ -1,0 +1,4 @@
+panel,n_compounds,n_features,n_kmedoids,sil_kmedoids,n_hdbscan_clusters,n_hdbscan_noise,sil_hdbscan,double_validated_islands,cycloA_found,umap_stability_min_ari,umap_stability_pass
+Panel_A_2D,7298,7,8,0.4385,69,914,-0.1115,2,6,0.3822,False
+Panel_B_3D_delta,1402,8,8,0.2351,2,226,0.3588,4,1,0.3145,False
+Panel_C_combined,1403,9,8,0.2649,5,314,0.2211,3,1,0.0681,False

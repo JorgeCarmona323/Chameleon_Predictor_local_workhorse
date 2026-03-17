@@ -46,8 +46,21 @@ FEATURE_GROUPS = {
     "Tier-1 Δ (conformer engine)": [
         "delta_psa3d", "delta_hb", "delta_Rg",
         "delta_NPR1", "delta_NPR2", "delta_Asphericity",
-        "psa3d_spread", "psa3d_std", "hb_spread",
+        "psa3d_std",
     ],
+}
+
+# Map JSON short keys → display palette keys
+GROUP_NAME_MAP = {
+    "2D_baseline":  "2D Baseline",
+    "DB_delta":     "DB 3D (from CycPeptMPDB)",
+    "Tier1_delta":  "Tier-1 Δ (conformer engine)",
+}
+
+GROUP_PALETTE = {
+    "2D Baseline":              "#7FC97F",   # green
+    "DB 3D (from CycPeptMPDB)": "#BEAED4",   # purple
+    "Tier-1 Δ (conformer engine)": "#FDC086", # orange
 }
 
 
@@ -192,7 +205,20 @@ def plot_correlation_heatmap(corr_df: pd.DataFrame, df: pd.DataFrame,
     )
     ax.set_title(f"Feature vs. PAMPA LogPexp Correlation (top {top_n})", fontsize=11, fontweight="bold")
     ax.set_xlabel("Correlation metric")
+
+    # Color y-tick labels by feature group
+    feat_to_group = valid.set_index("Feature")["Group"].to_dict()
+    for tick, feat in zip(ax.get_yticklabels(), top_feats):
+        grp = feat_to_group.get(feat, "")
+        tick.set_color(GROUP_PALETTE.get(grp, "black"))
+        tick.set_fontweight("bold")
+
+    from matplotlib.patches import Patch
+    legend_elements = [Patch(facecolor=c, label=g) for g, c in GROUP_PALETTE.items()]
+    fig.legend(handles=legend_elements, loc="lower center", fontsize=7,
+               ncol=3, bbox_to_anchor=(0.5, -0.02), frameon=True)
     plt.tight_layout()
+    plt.subplots_adjust(bottom=0.1)
 
     path = outdir / "figures" / "correlation_heatmap.png"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -210,10 +236,8 @@ def plot_auc_bar(auc_df: pd.DataFrame, outdir: Path) -> None:
     top = valid.head(top_n)
 
     colors = []
-    palette = {"2D Baseline": "#7FC97F", "DB 3D (from CycPeptMPDB)": "#BEAED4",
-               "Tier-1 Δ (conformer engine)": "#FDC086"}
     for g in top["Group"]:
-        colors.append(palette.get(g, "#CCCCCC"))
+        colors.append(GROUP_PALETTE.get(g, "#CCCCCC"))
 
     fig, ax = plt.subplots(figsize=(8, max(4, top_n * 0.35 + 1)))
     bars = ax.barh(range(top_n), top["AUC_ROC"].values, color=colors, edgecolor="grey", linewidth=0.5)
@@ -226,7 +250,7 @@ def plot_auc_bar(auc_df: pd.DataFrame, outdir: Path) -> None:
 
     # Legend
     from matplotlib.patches import Patch
-    legend_elements = [Patch(facecolor=c, label=g) for g, c in palette.items()]
+    legend_elements = [Patch(facecolor=c, label=g) for g, c in GROUP_PALETTE.items()]
     ax.legend(handles=legend_elements, loc="lower right", fontsize=8)
 
     plt.tight_layout()
@@ -237,10 +261,13 @@ def plot_auc_bar(auc_df: pd.DataFrame, outdir: Path) -> None:
 
 
 def plot_scatter_top(df: pd.DataFrame, corr_df: pd.DataFrame, outdir: Path,
-                     n_top: int = 6) -> None:
-    """Scatter plot of top-N features vs. PAMPA."""
+                     n_top: int = 3) -> None:
+    """Scatter plot of top-N and bottom-N features vs. PAMPA (by Spearman ρ)."""
     valid = corr_df.dropna(subset=["Spearman_rho"])
     top_feats = valid.head(n_top)["Feature"].tolist()
+    bot_feats = valid.tail(n_top)["Feature"].tolist()
+    top_feats = top_feats + bot_feats
+    n_top = len(top_feats)
 
     cols = min(3, n_top)
     rows = (n_top + cols - 1) // cols
@@ -276,7 +303,7 @@ def plot_scatter_top(df: pd.DataFrame, corr_df: pd.DataFrame, outdir: Path,
     for j in range(len(top_feats), len(axes)):
         axes[j].set_visible(False)
 
-    fig.suptitle("Top Features vs. PAMPA LogPexp", fontsize=12, fontweight="bold")
+    fig.suptitle("Top 3 vs. Bottom 3 Features — PAMPA LogPexp (Spearman ρ)", fontsize=12, fontweight="bold")
     plt.tight_layout()
 
     path = outdir / "figures" / "scatter_top_features.png"
@@ -294,7 +321,14 @@ def run(matrix_csv: str, outdir: Path) -> None:
     fg_path = outdir / "feature_groups.json"
     if fg_path.exists():
         fg_raw = json.loads(fg_path.read_text())
-        feature_groups = {k: v for k, v in fg_raw.items() if k != "combined"}
+        # Remap short JSON keys to display names; drop psa3d_spread (redundant with delta_psa3d)
+        DROP = {"psa3d_spread", "hb_spread"}
+        feature_groups = {}
+        for k, v in fg_raw.items():
+            if k == "combined":
+                continue
+            display = GROUP_NAME_MAP.get(k, k)
+            feature_groups[display] = [f for f in v if f not in DROP]
     else:
         feature_groups = FEATURE_GROUPS
 

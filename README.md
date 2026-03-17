@@ -86,18 +86,6 @@ GFN2-xTB single-structure optimization with GBSA (water/CHCl3) was completed for
 
 ## Results
 
-### AUC-ROC Summary (PAMPA permeable classification)
-
-| Feature | AUC | Spearman ρ | Notes |
-|---------|-----|-----------|-------|
-| `psa3d_std` | **0.749** | 0.467 | Best single feature |
-| `delta_psa3d` | **0.744** | 0.457 | Core chameleonic descriptor |
-| `MolLogP` (2D) | 0.631 | — | Best 2D baseline |
-| `TPSA` (2D) | ~0.60 | — | Standard 2D PSA |
-| `delta_3DPSA_db` | 0.507 | ~0.01 | DB single-structure — random |
-
-**Tier-1 ΔPSA beats best 2D by 11 AUC points. DB single-structure is random.**
-
 ### Reference Compound Validation
 
 | Compound | Permeable | Tier-1 ΔPSA (Å²) | xtb ΔPSA (Å²) | Literature ΔPSA |

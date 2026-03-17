@@ -1,20 +1,18 @@
 Feature,Group,N,Pearson_r,Pearson_p,Spearman_rho,Spearman_p,abs_Spearman
-psa3d_std,Tier1_delta,1501,0.4155,0.0,0.4665,0.0,0.4665
-psa3d_spread,Tier1_delta,1502,0.4,0.0,0.4569,0.0,0.4569
-delta_psa3d,Tier1_delta,1502,0.4,0.0,0.4569,0.0,0.4569
-hb_spread,Tier1_delta,1500,0.2695,0.0,0.2986,0.0,0.2986
-delta_Rg,Tier1_delta,1502,0.2661,0.0,0.2926,0.0,0.2926
-NumRotatableBonds,2D_baseline,7298,0.1619,0.0,0.2118,0.0,0.2118
-MolLogP,2D_baseline,7298,0.0977,0.0,0.1508,0.0,0.1508
-delta_hb,Tier1_delta,1502,0.1195,0.0,0.1274,0.0,0.1274
-MolWt,2D_baseline,7298,0.1536,0.0,0.1156,0.0,0.1156
-NumHDonors,2D_baseline,7298,-0.0397,0.0007,-0.0849,0.0,0.0849
-NumHAcceptors,2D_baseline,7298,0.0946,0.0,0.0481,0.0,0.0481
-delta_Asphericity,Tier1_delta,1500,0.0397,0.1244,0.0406,0.1163,0.0406
-RingCount,2D_baseline,7298,-0.0411,0.0004,-0.0401,0.0006,0.0401
-delta_NPR2,Tier1_delta,1500,-0.0091,0.724,-0.0339,0.1897,0.0339
-H2O_3DPSA,DB_delta,6941,0.051,0.0,-0.0202,0.0923,0.0202
-delta_3DPSA_db,DB_delta,6941,-0.0284,0.018,-0.0197,0.1004,0.0197
-CHCl3_3DPSA,DB_delta,6941,0.0541,0.0,-0.0182,0.1298,0.0182
-TPSA,2D_baseline,7298,0.0811,0.0,-0.0169,0.1488,0.0169
-delta_NPR1,Tier1_delta,1500,-0.015,0.5612,-0.0127,0.6242,0.0127
+psa3d_std,Tier-1 Δ (conformer engine),1501,0.4155,0.0,0.4665,0.0,0.4665
+delta_psa3d,Tier-1 Δ (conformer engine),1502,0.4,0.0,0.4569,0.0,0.4569
+delta_Rg,Tier-1 Δ (conformer engine),1502,0.2661,0.0,0.2926,0.0,0.2926
+NumRotatableBonds,2D Baseline,7298,0.1619,0.0,0.2118,0.0,0.2118
+MolLogP,2D Baseline,7298,0.0977,0.0,0.1508,0.0,0.1508
+delta_hb,Tier-1 Δ (conformer engine),1502,0.1195,0.0,0.1274,0.0,0.1274
+MolWt,2D Baseline,7298,0.1536,0.0,0.1156,0.0,0.1156
+NumHDonors,2D Baseline,7298,-0.0397,0.0007,-0.0849,0.0,0.0849
+NumHAcceptors,2D Baseline,7298,0.0946,0.0,0.0481,0.0,0.0481
+delta_Asphericity,Tier-1 Δ (conformer engine),1500,0.0397,0.1244,0.0406,0.1163,0.0406
+RingCount,2D Baseline,7298,-0.0411,0.0004,-0.0401,0.0006,0.0401
+delta_NPR2,Tier-1 Δ (conformer engine),1500,-0.0091,0.724,-0.0339,0.1897,0.0339
+H2O_3DPSA,DB 3D (from CycPeptMPDB),6941,0.051,0.0,-0.0202,0.0923,0.0202
+delta_3DPSA_db,DB 3D (from CycPeptMPDB),6941,-0.0284,0.018,-0.0197,0.1004,0.0197
+CHCl3_3DPSA,DB 3D (from CycPeptMPDB),6941,0.0541,0.0,-0.0182,0.1298,0.0182
+TPSA,2D Baseline,7298,0.0811,0.0,-0.0169,0.1488,0.0169
+delta_NPR1,Tier-1 Δ (conformer engine),1500,-0.015,0.5612,-0.0127,0.6242,0.0127

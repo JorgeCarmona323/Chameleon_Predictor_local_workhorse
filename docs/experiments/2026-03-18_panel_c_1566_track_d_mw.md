@@ -66,7 +66,7 @@ Min pairwise ARI = **0.995** across 5 seeds (threshold 0.85). Extremely stable â
 
 ### Figure
 
-![Panel C 1566 + Track D](../figures/Panel_C_combined_umap_1566.png)
+![Panel C 1566 + Track D](../../results/figures/Panel_C_combined_umap_1566.png)
 
 The limegreen permeable rings in Track D cluster almost entirely in the high-MW (plasma hot) region. The impermeable-enriched C1 cluster occupies the low-MW (purple/blue) region.
 

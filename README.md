@@ -149,9 +149,17 @@ Panel B remains the strongest visual result of this project: the conformational 
 
 ![AUC-ROC bar chart](results/figures/auc_roc_bar.png)
 
-**UMAP Panel B: 3D delta feature space** — two-population structure surviving on the full 7,297-compound dataset (core visual result):
+**UMAP Panel B: 3D delta feature space** — the same embedding at two scales tells the heterogeneity story visually.
 
-![UMAP Panel B](results/figures/Panel_B_3D_delta_umap.png)
+1,502 compounds (Furukawa + Chugai sources, cleaner labels):
+
+![UMAP Panel B 1502](results/figures/Panel_B_3D_delta_umap_1502.png)
+
+Full 7,297 compounds (all PAMPA sources, mixed protocols):
+
+![UMAP Panel B 7k](results/figures/Panel_B_3D_delta_umap.png)
+
+The two-population structure is present in both, but the permeable/non-permeable coloring that sharpens the boundary in the 1,502-compound panel dissolves in the full dataset. The conformational descriptor is partitioning chemical space the same way in both cases — what changes is the label quality. Townsend 2020's pooled PAMPA protocol and Chugai's different membrane formulation introduce enough cross-source noise to wash out the permeability signal that the descriptor correctly identifies on homogeneous data.
 
 **UMAP Panel A and C** — 2D chemical space and combined 2D + 3D:
 

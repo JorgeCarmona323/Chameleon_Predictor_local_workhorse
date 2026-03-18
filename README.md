@@ -145,14 +145,26 @@ Panel B remains the strongest visual result of this project: the conformational 
 
 ### Key Figures
 
-| Figure | File | What it shows |
-|--------|------|--------------|
-| AUC-ROC bar chart | `results/figures/auc_roc_bar.png` | Feature ranking across all descriptor groups |
-| Correlation heatmap | `results/figures/correlation_heatmap.png` | Pearson/Spearman vs. PAMPA LogPexp |
-| ΔPSA scatter | `results/figures/scatter_top_features.png` | delta_psa3d vs. LogPexp colored by permeability |
-| UMAP Panel A | `results/figures/Panel_A_2D_umap.png` | 2D descriptor chemical space |
-| UMAP Panel B | `results/figures/Panel_B_3D_delta_umap.png` | 3D delta feature chemical space (core result) |
-| UMAP Panel C | `results/figures/Panel_C_combined_umap.png` | Combined 2D + 3D delta |
+**AUC-ROC by feature group** — Tier-1 ensemble descriptors vs. 2D baseline vs. DB single-structure:
+
+![AUC-ROC bar chart](results/figures/auc_roc_bar.png)
+
+**Correlation heatmap** — Pearson r and Spearman rho vs. PAMPA LogPexp, color-coded by descriptor group:
+
+![Correlation heatmap](results/figures/correlation_heatmap.png)
+
+**Top vs. bottom features scatter** — delta_psa3d and MolLogP vs. LogPexp colored by permeability label:
+
+![Scatter top features](results/figures/scatter_top_features.png)
+
+**UMAP Panel B: 3D delta feature space** — two-population structure surviving on the full 7,297-compound dataset (core visual result):
+
+![UMAP Panel B](results/figures/Panel_B_3D_delta_umap.png)
+
+**UMAP Panel A and C** — 2D chemical space (mostly noise) and combined 2D + 3D (most stable):
+
+![UMAP Panel A](results/figures/Panel_A_2D_umap.png)
+![UMAP Panel C](results/figures/Panel_C_combined_umap.png)
 
 ---
 

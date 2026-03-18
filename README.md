@@ -151,11 +151,11 @@ Panel B remains the strongest visual result of this project: the conformational 
 
 **UMAP Panel B: 3D delta feature space** — the same embedding at two scales tells the heterogeneity story visually.
 
-1,502 compounds (Furukawa + Chugai sources, cleaner labels):
+1,502 compounds (Furukawa + Chugai sources, cleaner labels and reliable methadology):
 
 ![UMAP Panel B 1502](results/figures/Panel_B_3D_delta_umap_1502.png)
 
-Full 7,297 compounds (all PAMPA sources, mixed protocols):
+Full 7,297 compounds (all PAMPA sources, mixed protocols and scoring metric):
 
 ![UMAP Panel B 7k](results/figures/Panel_B_3D_delta_umap.png)
 

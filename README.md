@@ -129,7 +129,7 @@ The 1,502-compound subset analyzed above draws disproportionately from Furukawa 
 
 ### UMAP Panel B: Chemical Space Structure Survives on the Full Dataset
 
-Even where AUC fails, UMAP Panel B — the 3D delta feature space embedding — shows a reproducible two-population structure on the full 7,297-compound dataset. The two populations correspond to high-ΔPSA chameleonic scaffolds and low-ΔPSA rigid/polar compounds, and the permeable/non-permeable enrichment pattern within them is consistent across K-Medoids and HDBSCAN clustering.
+Even where AUC fails, UMAP Panel B, the 3D delta feature space embedding, shows a reproducible two-population structure on the full 7,297-compound dataset. The two populations correspond to high-ΔPSA chameleonic scaffolds and low-ΔPSA rigid/polar compounds, and the permeable/non-permeable enrichment pattern within them is consistent across K-Medoids and HDBSCAN clustering.
 
 ARI stability across 5 random seeds on the full 7k dataset tells a more nuanced story than a single summary number:
 
@@ -139,7 +139,7 @@ ARI stability across 5 random seeds on the full 7k dataset tells a more nuanced 
 | Panel B (3D delta) | 0.10–0.997 | Bimodal — some seed pairs near-perfect, others near-zero |
 | Panel C (combined) | 0.90–0.99 | Highly stable across all pairs |
 
-Panel B's bimodal ARI is the most informative result. HDBSCAN is not failing — it is finding two internally consistent but structurally different solutions depending on initialization. Some seeds lock onto the chameleonic two-population partition; others find a different valid partition of the same space. Both are real. This means the two-population signal exists and competes with another attractor in 3D delta feature space, which is exactly what you would expect from a dataset with this much label noise and size heterogeneity. Panel C's high stability confirms that combining 2D and 3D features resolves the ambiguity — the combined space has one dominant structure.
+Panel B's bimodal ARI is the most informative result. HDBSCAN is not failing, it is finding two internally consistent but structurally different solutions depending on initialization. Some seeds lock onto the chameleonic two-population partition; others find a different valid partition of the same space. Both are real. This means the two-population signal exists and competes with another attractor in 3D delta feature space, which is exactly what you would expect from a dataset with this much label noise and size heterogeneity. Panel C's high stability confirms that combining 2D and 3D features resolves the ambiguity, the combined space has one dominant structure.
 
 Panel B remains the strongest visual result of this project: the conformational descriptors stratify chemical space in a permeability-relevant way even when cross-source label noise prevents AUC from detecting it.
 
@@ -159,7 +159,7 @@ Full 7,297 compounds (all PAMPA sources, mixed protocols and scoring metric):
 
 ![UMAP Panel B 7k](results/figures/Panel_B_3D_delta_umap.png)
 
-The two-population structure is present in both, but the permeable/non-permeable coloring that sharpens the boundary in the 1,502-compound panel dissolves in the full dataset. The conformational descriptor is partitioning chemical space the same way in both cases — what changes is the label quality. Townsend 2020's pooled PAMPA protocol and Chugai's different membrane formulation introduce enough cross-source noise to wash out the permeability signal that the descriptor correctly identifies on homogeneous data.
+The two-population structure is present in both, but the permeable/non-permeable coloring that sharpens the boundary in the 1,502-compound panel dissolves in the full dataset. The conformational descriptor is partitioning chemical space the same way in both cases, what changes is the label quality. Townsend 2020's pooled PAMPA protocol and Chugai's different membrane formulation introduce enough cross-source noise to wash out the permeability signal that the descriptor correctly identifies on homogeneous data.
 
 **UMAP Panel A and C** — 2D chemical space and combined 2D + 3D:
 
@@ -172,7 +172,7 @@ The two-population structure is present in both, but the permeable/non-permeable
 
 ### Interpretation
 
-The 1,502-compound result (AUC = 0.744) and CsA validation (ΔPSA = 84.9 Å² vs. literature ~75 Å²) confirm that the ensemble descriptor is physically correct and predictive on clean, homogeneous data. The full-dataset collapse is not a scientific contradiction — it is a reproducible demonstration that CycPeptMPDB cannot serve as a benchmark for this type of descriptor without source stratification. Both the descriptor success on clean data and the database quality problem are real, defensible findings.
+The 1,502-compound result (AUC = 0.744) and CsA validation (ΔPSA = 84.9 Å² vs. literature ~75 Å²) confirm that the ensemble descriptor is physically correct and predictive on clean, homogeneous data. The full-dataset collapse is not a scientific contradiction, it is a reproducible demonstration that CycPeptMPDB cannot serve as a benchmark for this type of descriptor without source stratification. Both the descriptor success on clean data and the database quality problem are real, defensible findings.
 
 The DB 3DPSA result (AUC = 0.507) holds at both scales and is the cleanest negative control in the project: the database's own 3D features, computed from single structures, carry no signal. Ensemble coverage is the prerequisite.
 
@@ -188,7 +188,7 @@ The DB 3DPSA result (AUC = 0.507) holds at both scales and is the cleanest negat
 
 The most direct path to recovering and improving on the AUC = 0.744 result combines three changes:
 
-1. **Normalize ΔPSA (Yu et al. 2026)**: The current descriptor is absolute (Å²) and scales with MW and ring count, so large peptides inflate it regardless of how chameleonic they actually are. Yu et al. 2026 (*bioRxiv*, DOI: 10.64898/2026.01.06.697862) use ΔPSA/SASA\_total — a dimensionless fractional switching ratio — and find it predictive where absolute ΔPSA fails. Combined with a size filter (≥9 residues, below which chameleonic behavior does not reliably manifest), this removes the dominant confound in the current analysis.
+1. **Normalize ΔPSA (Yu et al. 2026)**: The current descriptor is absolute (Å²) and scales with MW and ring count, so large peptides inflate it regardless of how chameleonic they actually are. Yu et al. 2026 (*bioRxiv*, DOI: 10.64898/2026.01.06.697862) use ΔPSA/SASA\_total, a dimensionless fractional switching ratio, and find it predictive where absolute ΔPSA fails. Combined with a size filter (≥9 residues, below which chameleonic behavior does not reliably manifest), this removes the dominant confound in the current analysis.
 
 2. **Source-stratify the PAMPA labels**: Rerun on a single-protocol subset (e.g., Furukawa 2016 individual-compound LC-MS) to test whether AUC recovers when cross-source label noise is eliminated.
 

@@ -246,7 +246,7 @@ def check_umap_stability(X_red: np.ndarray, outdir: Path, panel_name: str) -> fl
         print(f"  [Stability] PASS — layout stable (min ARI {min_ari:.3f} >= {STABILITY_ARI_MIN})")
 
     # Save ARI matrix to CSV for reporting
-    ari_path = outdir / "figures" / f"{panel_name}_umap_stability.csv"
+    ari_path = outdir / "figures" / f"{panel_name}_umap_stability_{len(X_red)}.csv"
     ari_path.parent.mkdir(parents=True, exist_ok=True)
     rows = []
     idx  = 0
@@ -275,6 +275,7 @@ def make_dual_track_panel(
     features: list,
     outdir: Path,
     n_kmedoids: int = N_KMEDOIDS,
+    extra_cols: list = None,
 ) -> dict:
     """
     Full dual-track pipeline for one feature panel.
@@ -288,7 +289,10 @@ def make_dual_track_panel(
         print(f"  {panel_name}: only {len(available)} features available — skipping")
         return {}
 
-    sub = df[available + ["PAMPA", "permeable", "ID"]].dropna().copy()
+    # extra_cols: pass-through columns for Track D (e.g. MolWt); not used as features
+    base_cols = available + ["PAMPA", "permeable", "ID"]
+    extra = [c for c in (extra_cols or []) if c in df.columns and c not in base_cols]
+    sub = df[base_cols + extra].dropna(subset=base_cols).copy()
     print(f"\n── {panel_name} ──")
     print(f"  Features  : {available}")
     print(f"  Compounds : {len(sub):,}")
@@ -392,8 +396,11 @@ def make_dual_track_panel(
     else:
         print("\n  No double-validated islands found.")
 
-    # ── Figure: 3 subplots ───────────────────────────────────────────────────
-    fig, axes = plt.subplots(1, 3, figsize=(22, 6))
+    # ── Figure: 3 or 4 subplots (4 when MolWt Track D is requested) ──────────
+    has_mw = "MolWt" in sub.columns
+    n_subplots = 4 if has_mw else 3
+    fig_width  = 28 if has_mw else 22
+    fig, axes = plt.subplots(1, n_subplots, figsize=(fig_width, 6))
     cycloA_mask = sub["ID"].isin(CYCLOA_IDS).values
 
     # --- Subplot 1: K-Medoids ---
@@ -466,28 +473,71 @@ def make_dual_track_panel(
     ax3.set_title("The Clincher — PAMPA LogPexp\n(validate cluster chemistry)")
     ax3.set_xlabel("UMAP 1"); ax3.set_ylabel("UMAP 2")
 
+    # --- Subplot 4: Track D — Molecular Weight (optional) ---
+    if has_mw:
+        ax4 = axes[3]
+        mw_vals = sub["MolWt"].values
+        norm_mw = Normalize(
+            vmin=np.percentile(mw_vals, 5),
+            vmax=np.percentile(mw_vals, 95),
+        )
+        sc_mw = ax4.scatter(
+            embedding[:, 0], embedding[:, 1],
+            c=mw_vals, cmap=plt.cm.plasma, norm=norm_mw,
+            s=8, alpha=0.5, rasterized=True,
+        )
+        plt.colorbar(sc_mw, ax=ax4, label="Molecular Weight (Da)")
+        if cycloA_mask.sum() > 0:
+            ax4.scatter(
+                embedding[cycloA_mask, 0], embedding[cycloA_mask, 1],
+                s=150, marker="*", c="cyan", zorder=10,
+                edgecolors="white", linewidths=0.8,
+                label=f"CycloA (n={cycloA_mask.sum()})",
+            )
+            ax4.legend(fontsize=9)
+        # Overlay permeability boundary: mark permeable points with a thin ring
+        perm_mask = y_bin.astype(bool)
+        ax4.scatter(
+            embedding[perm_mask, 0], embedding[perm_mask, 1],
+            s=18, facecolors="none", edgecolors="limegreen",
+            linewidths=0.4, alpha=0.35, zorder=5,
+            label=f"Permeable (n={perm_mask.sum()})",
+        )
+        ax4.legend(fontsize=7, loc="upper right")
+        # Annotate median MW for permeable vs impermeable
+        med_perm   = np.median(mw_vals[perm_mask])
+        med_imperm = np.median(mw_vals[~perm_mask])
+        ax4.set_title(
+            f"Track D — Molecular Weight\n"
+            f"Med permeable={med_perm:.0f} Da  |  impermeable={med_imperm:.0f} Da"
+        )
+        ax4.set_xlabel("UMAP 1"); ax4.set_ylabel("UMAP 2")
+
+    n_label = f"{len(sub):,}".replace(",", "")
     fig.suptitle(
-        f"{panel_name}  |  Dual-Track: K-Medoids (archetypes) + HDBSCAN (natural signal)",
+        f"{panel_name}  (n={len(sub):,})  |  "
+        f"Dual-Track: K-Medoids (archetypes) + HDBSCAN (natural signal)",
         fontsize=11, fontweight="bold",
     )
     plt.tight_layout()
-    fig_path = outdir / "figures" / f"{panel_name}_umap.png"
+    fig_path = outdir / "figures" / f"{panel_name}_umap_{n_label}.png"
     plt.savefig(fig_path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"\n  Figure saved: {fig_path}")
 
     # ── Save per-compound embedding + cluster labels ─────────────────────────
-    sub_out = sub[["ID", "PAMPA", "permeable"]].copy()
+    save_cols = ["ID", "PAMPA", "permeable"] + (["MolWt"] if has_mw else [])
+    sub_out = sub[save_cols].copy()
     sub_out["embedding_x"]      = embedding[:, 0]
     sub_out["embedding_y"]      = embedding[:, 1]
     sub_out["kmedoids_cluster"] = km_labels
     sub_out["hdbscan_cluster"]  = hdb_labels
-    sub_out.to_csv(outdir / f"{panel_name}_embedding.csv", index=False)
+    sub_out.to_csv(outdir / f"{panel_name}_embedding_{n_label}.csv", index=False)
 
     fig_dir = outdir / "figures"
-    km_enrich.to_csv(fig_dir / f"{panel_name}_kmedoids_enrichment.csv", index=False)
-    hdb_enrich.to_csv(fig_dir / f"{panel_name}_hdbscan_enrichment.csv", index=False)
-    conv_df.to_csv(fig_dir / f"{panel_name}_convergence.csv", index=False)
+    km_enrich.to_csv(fig_dir / f"{panel_name}_kmedoids_enrichment_{n_label}.csv", index=False)
+    hdb_enrich.to_csv(fig_dir / f"{panel_name}_hdbscan_enrichment_{n_label}.csv", index=False)
+    conv_df.to_csv(fig_dir / f"{panel_name}_convergence_{n_label}.csv", index=False)
 
     return {
         "panel":                    panel_name,
@@ -507,36 +557,55 @@ def make_dual_track_panel(
 
 # ── Entry point ────────────────────────────────────────────────────────────────
 
-def run(matrix_csv: str, outdir: Path, n_kmedoids: int) -> None:
+def run(matrix_csv: str, outdir: Path, n_kmedoids: int,
+        sources: list = None, panels: list = None) -> None:
     (outdir / "figures").mkdir(parents=True, exist_ok=True)
 
     df = pd.read_csv(matrix_csv, low_memory=False)
     df = df[df["PAMPA"].notna()].copy()
     df["permeable"] = (df["PAMPA"] >= PAMPA_THRESHOLD).astype(int)
+
+    if sources:
+        df = df[df["Source"].isin(sources)].copy()
+        print(f"Source filter: {sources}")
+
     print(f"Loaded {len(df):,} compounds with PAMPA values")
     print(f"Permeable: {df['permeable'].sum():,} ({100*df['permeable'].mean():.1f}%)")
 
+    active_panels = {k: v for k, v in FEATURE_PANELS.items()
+                     if panels is None or k in panels}
+
     summary_rows = []
-    for panel_name, features in FEATURE_PANELS.items():
-        result = make_dual_track_panel(df, panel_name, features, outdir, n_kmedoids)
+    for panel_name, features in active_panels.items():
+        result = make_dual_track_panel(
+            df, panel_name, features, outdir, n_kmedoids,
+            extra_cols=["MolWt"],
+        )
         if result:
             summary_rows.append(result)
 
     if summary_rows:
         summary = pd.DataFrame(summary_rows)
-        summary.to_csv(outdir / "umap_panel_summary.csv", index=False)
+        n_total = summary["n_compounds"].iloc[0] if len(summary) else "all"
+        suffix  = f"_{n_total}" if sources else ""
+        summary.to_csv(outdir / f"umap_panel_summary{suffix}.csv", index=False)
         print(f"\n── Summary ──\n{summary.to_string(index=False)}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Dual-track UMAP visualization")
-    parser.add_argument("--matrix", "-m", default="results/feature_matrix.csv")
+    parser.add_argument("--matrix",  "-m", default="results/feature_matrix.csv")
     parser.add_argument("--outdir",  "-o", default="results")
     parser.add_argument("--k",       "-k", type=int, default=N_KMEDOIDS,
                         help=f"Number of K-Medoid archetypes (default: {N_KMEDOIDS})")
+    parser.add_argument("--sources", "-s", nargs="+", default=None,
+                        help="Filter to these Source values (e.g. 2016_Furukawa 2013_CHUGAI)")
+    parser.add_argument("--panels",  "-p", nargs="+", default=None,
+                        help="Run only these panels (e.g. Panel_C_combined)")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.matrix, Path(args.outdir), args.k)
+    run(args.matrix, Path(args.outdir), args.k,
+        sources=args.sources, panels=args.panels)

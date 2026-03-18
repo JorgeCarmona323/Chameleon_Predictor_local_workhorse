@@ -78,6 +78,24 @@ The limegreen permeable rings in Track D cluster almost entirely in the high-MW 
 
 **Absolute ΔPSA is a size proxy in the current model.** A 15-residue peptide that barely switches produces a larger raw ΔPSA (Å²) than a 9-residue peptide that fully buries its polar surface. The Yu et al. 2026 normalization (ΔPSA/SASA_total) removes this confound.
 
+## Comparison: Panel C on full 7k dataset
+
+Same panel run on all 7,298 compounds (6,938 with complete features):
+
+![Panel C 7k + Track D](../../results/figures/Panel_C_combined_umap_6938.png)
+
+| Metric | 1,566 compounds (Furukawa + Chugai) | 6,938 compounds (all sources) |
+|--------|--------------------------------------|-------------------------------|
+| HDBSCAN silhouette | 0.425 | **−0.022** |
+| HDBSCAN clusters | 2 | 5 |
+| Min ARI (stability) | 0.995 | 0.899 |
+| Best cluster perm rate | 87.8% | 70.3% |
+| Enrichment range | 0.78–1.16× | 0.97–1.03× |
+| Median MW permeable | **1,180 Da** | 820 Da |
+| Median MW impermeable | 820 Da | 820 Da |
+
+The MW gap that was 1.44× on the 1.5k is **gone entirely** on the 7k — permeable and impermeable compounds have the same median MW once Townsend/Kelly data floods in. This is the clearest demonstration yet that the heterogeneous PAMPA labels are not just noisy — they are actively inverting the MW/permeability relationship that exists on clean data. Large chameleonic compounds are being labeled impermeable (or vice versa) by incompatible pooled-assay protocols, destroying the size signal.
+
 ## Next experiment
 
 1. Add `delta_psa3d_per_mw`, `delta_psa3d_per_sasa`, `delta_psa3d_per_residue` to `conformer_engine.py`

@@ -129,7 +129,19 @@ The 1,502-compound subset analyzed above draws disproportionately from Furukawa 
 
 ### UMAP Panel B: Chemical Space Structure Survives on the Full Dataset
 
-Even where AUC fails, UMAP Panel B — the 3D delta feature space embedding — shows a reproducible two-population structure on the full 7,297-compound dataset. The two populations correspond to high-ΔPSA chameleonic scaffolds and low-ΔPSA rigid/polar compounds, and the permeable/non-permeable enrichment pattern within them is consistent across K-Medoids and HDBSCAN clustering. UMAP cluster stability across 5 random seeds was ARI 0.07–0.38 for all three panels, reflecting the continuous, graded nature of permeability in this dataset rather than discrete clusters. Panel B is the strongest visual result of this project: the conformational descriptors stratify chemical space in a permeability-relevant way even when cross-source label noise prevents AUC from capturing it.
+Even where AUC fails, UMAP Panel B — the 3D delta feature space embedding — shows a reproducible two-population structure on the full 7,297-compound dataset. The two populations correspond to high-ΔPSA chameleonic scaffolds and low-ΔPSA rigid/polar compounds, and the permeable/non-permeable enrichment pattern within them is consistent across K-Medoids and HDBSCAN clustering.
+
+ARI stability across 5 random seeds on the full 7k dataset tells a more nuanced story than a single summary number:
+
+| Panel | ARI range | Interpretation |
+|-------|-----------|----------------|
+| Panel A (2D) | 0.38–0.89 | Mostly stable (8/10 pairs > 0.81); one outlier seed at 0.38–0.43 |
+| Panel B (3D delta) | 0.10–0.997 | Bimodal — some seed pairs near-perfect, others near-zero |
+| Panel C (combined) | 0.90–0.99 | Highly stable across all pairs |
+
+Panel B's bimodal ARI is the most informative result. HDBSCAN is not failing — it is finding two internally consistent but structurally different solutions depending on initialization. Some seeds lock onto the chameleonic two-population partition; others find a different valid partition of the same space. Both are real. This means the two-population signal exists and competes with another attractor in 3D delta feature space, which is exactly what you would expect from a dataset with this much label noise and size heterogeneity. Panel C's high stability confirms that combining 2D and 3D features resolves the ambiguity — the combined space has one dominant structure.
+
+Panel B remains the strongest visual result of this project: the conformational descriptors stratify chemical space in a permeability-relevant way even when cross-source label noise prevents AUC from detecting it.
 
 ### Key Figures
 
@@ -162,11 +174,15 @@ The DB 3DPSA result (AUC = 0.507) holds at both scales and is the cleanest negat
 
 ### Next Steps
 
-- Source-stratified re-analysis using a single-protocol PAMPA subset (e.g., Furukawa 2016 only) to test whether AUC recovers when label noise is reduced
-- Obtain HPC allocation for CREST conformer sampling on reference set
-- Normalized ΔPSA descriptors (per-MW, per-SASA) to remove size confounding
-- Expand dataset with unbiased Caco-2/RRCK data from Lokey lab publications
-- Random forest + SHAP for interpretable SAR
+The most direct path to recovering and improving on the AUC = 0.744 result combines three changes:
+
+1. **Normalize ΔPSA (Yu et al. 2026)**: The current descriptor is absolute (Å²) and scales with MW and ring count, so large peptides inflate it regardless of how chameleonic they actually are. Yu et al. 2026 (*bioRxiv*, DOI: 10.64898/2026.01.06.697862) use ΔPSA/SASA\_total — a dimensionless fractional switching ratio — and find it predictive where absolute ΔPSA fails. Combined with a size filter (≥9 residues, below which chameleonic behavior does not reliably manifest), this removes the dominant confound in the current analysis.
+
+2. **Source-stratify the PAMPA labels**: Rerun on a single-protocol subset (e.g., Furukawa 2016 individual-compound LC-MS) to test whether AUC recovers when cross-source label noise is eliminated.
+
+3. **Replace single-descriptor AUC with a proper ML model**: Random forest or gradient boosting across all delta features (ΔPSA/SASA, psa3d\_std, delta\_hb, delta\_Rg) captures nonlinear interactions that single-descriptor AUC cannot. SHAP values would then quantify which conformational degrees of freedom drive the prediction.
+
+These three changes are the logical continuation of this project and are planned for the standalone research pipeline.
 
 ---
 

@@ -200,22 +200,36 @@ These three changes are the logical continuation of this project and are planned
 
 ## Reproducibility
 
-**Individual scripts (run in order):**
 ```bash
-python scripts/curate_data.py            # -> data/pampa_curated.csv
-python scripts/conformer_engine.py       # -> results/conformer_descriptors_raw.csv
-python scripts/build_feature_matrix.py  # -> results/feature_matrix.csv
-python scripts/correlation_analysis.py  # -> results/correlation_table.csv + auc_roc_table.csv
-python scripts/umap_visualization.py    # -> results/figures/Panel_*.png
-```
-
-**Environment:**
-```bash
+# 1. Install environment
 conda env create -f environment.yml
 conda activate chem269_cycpep
+
+# 2. Place dataset in repo root
+# Download CycPeptMPDB_Peptide_All.csv from https://cycpeptmpdb.com
+
+# 3. Run full pipeline
+python run_pipeline.py
+
+# Quick test on 200 molecules (~5 min):
+python run_pipeline.py --max-mols 200 --n-confs 20
 ```
 
-**Main analysis notebook:** `notebooks/3d_descriptors.ipynb`
+## Deliverables
+
+| Artifact | Location |
+|----------|----------|
+| Main analysis notebook | [`notebooks/3d_descriptors.ipynb`](notebooks/3d_descriptors.ipynb) |
+| Pipeline entry point | [`run_pipeline.py`](run_pipeline.py) |
+| Data curation | [`scripts/curate_data.py`](scripts/curate_data.py) |
+| Conformer engine (Tier-1) | [`scripts/conformer_engine.py`](scripts/conformer_engine.py) |
+| Feature matrix builder | [`scripts/build_feature_matrix.py`](scripts/build_feature_matrix.py) |
+| Correlation + AUC analysis | [`scripts/correlation_analysis.py`](scripts/correlation_analysis.py) |
+| UMAP visualization | [`scripts/umap_visualization.py`](scripts/umap_visualization.py) |
+| AUC-ROC results | [`results/auc_roc_table.csv`](results/auc_roc_table.csv) |
+| Correlation results | [`results/correlation_table.csv`](results/correlation_table.csv) |
+| Findings and methods log | [`docs/findings_and_methods_log.md`](docs/findings_and_methods_log.md) |
+| Route prompt | [`assignment/climb_route_prompt.md`](assignment/climb_route_prompt.md) |
 
 ---
 

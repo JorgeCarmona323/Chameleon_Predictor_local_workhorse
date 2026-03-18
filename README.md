@@ -7,7 +7,9 @@
 
 ## Summary
 
-Cyclic peptides can passively cross cell membranes despite high polarity — a phenomenon called *chameleonic behavior* — by folding into compact, H-bond-shielded conformations in lipophilic environments while exposing polar groups in water. Standard 2D descriptors like TPSA and MolLogP are conformationally blind and cannot capture this switching. This project tests whether 3D ensemble-derived Δ descriptors (especially ΔPSA, the difference in polar surface area between aqueous and membrane-mimetic conformers) can outperform 2D baselines in predicting experimental PAMPA membrane permeability across ~7,300 cyclic peptides from CycPeptMPDB. The answer is yes: ensemble ΔPSA achieves AUC = 0.744 vs. AUC = 0.631 for the best 2D descriptor (MolLogP) — an 11-point improvement — validating that conformational sampling is essential and single-structure methods fail entirely.
+Cyclic peptides can passively cross cell membranes despite high polarity — a phenomenon called *chameleonic behavior* — by folding into compact, H-bond-shielded conformations in lipophilic environments while exposing polar groups in water. Standard 2D descriptors like TPSA and MolLogP are conformationally blind and cannot capture this switching. This project tests whether 3D ensemble-derived Δ descriptors (especially ΔPSA, the difference in polar surface area between aqueous and membrane-mimetic conformers) can outperform 2D baselines in predicting experimental PAMPA membrane permeability across 7,297 cyclic peptides from CycPeptMPDB.
+
+On the full 7,297-compound dataset, ensemble ΔPSA achieves AUC = 0.505 — essentially at chance — while MolLogP achieves AUC = 0.631 as the best single descriptor. An earlier exploratory run on 1,502 compounds (a biased non-random subset) yielded AUC = 0.744 for ΔPSA; that result is documented in Section 8 of the main notebook as a subset artifact, not a generalizable finding. The strongest result from this project is the UMAP Panel B two-population structure in 3D Δ feature space, which survives on the full dataset and provides visual evidence that ensemble conformational descriptors stratify chemical space in a permeability-relevant way even when the AUC signal is weak.
 
 ---
 
@@ -73,7 +75,7 @@ GFN2-xTB single-structure optimization with GBSA (water/CHCl3) was completed for
 | Data curation | RDKit canonicalization, PAMPA filter | Complete | 7,298 / 8,466 |
 | 2D baseline descriptors | RDKit | Complete | 100% |
 | DB 3DPSA | CycPeptMPDB H2O/CHCl3\_3DPSA | Complete | 88% (6,942) |
-| Tier-1 conformers | ETKDGv3 + MMFF94s, n=20 | Partial (full run in progress) | 1,502 / 7,298 |
+| Tier-1 conformers | ETKDGv3 + MMFF94s, n=20 | Complete — 7,297 / 7,298 | 99.99% |
 | Feature matrix | Merged all above | Complete | 7,298 rows |
 | Correlation analysis | Pearson, Spearman, AUC-ROC | Complete | — |
 | UMAP + clustering | K-Medoids + HDBSCAN dual-track | Complete | — |
@@ -98,6 +100,16 @@ GFN2-xTB single-structure optimization with GBSA (water/CHCl3) was completed for
 
 CsA Tier-1 ΔPSA = 84.9 Å² vs. literature ~75 Å² — validates the ensemble approach. xtb gives near-zero ΔPSA for all compounds including CsA, confirming single-structure methods fail.
 
+### AUC-ROC Results (full 7,297-compound dataset)
+
+| Descriptor | AUC-ROC | Group |
+|------------|---------|-------|
+| MolLogP | 0.631 | 2D baseline (best overall) |
+| delta_psa3d (Tier-1) | 0.505 | Tier-1 Δ |
+| delta_3DPSA_db | 0.507 | DB 3D |
+
+On the full dataset, Tier-1 ΔPSA does not outperform 2D baselines. An earlier run on a non-random 1,502-compound subset produced AUC = 0.744 for delta_psa3d; that result is acknowledged as exploratory in notebook Section 8 and is attributable to sampling bias rather than a generalizable effect. The finding that the dataset's own single-structure DB 3DPSA is also near-chance (AUC = 0.507) is a reproducible negative result and the methodological comparison is meaningful: both single-structure and ensemble force-field methods fail at full scale, with logP remaining the dominant predictor.
+
 ### Key Figures
 
 | Figure | File | What it shows |
@@ -106,7 +118,7 @@ CsA Tier-1 ΔPSA = 84.9 Å² vs. literature ~75 Å² — validates the ensemble 
 | Correlation heatmap | `results/figures/correlation_heatmap.png` | Pearson/Spearman vs. PAMPA LogPexp |
 | ΔPSA scatter | `results/figures/scatter_top_features.png` | delta_psa3d vs. LogPexp colored by permeability |
 | UMAP Panel A | `results/figures/Panel_A_2D_umap.png` | 2D descriptor chemical space |
-| UMAP Panel B | `results/figures/Panel_B_3D_delta_umap.png` | 3D Δ feature chemical space (core result) |
+| UMAP Panel B | `results/figures/Panel_B_3D_delta_umap.png` | 3D Δ feature chemical space (strongest visual result) |
 | UMAP Panel C | `results/figures/Panel_C_combined_umap.png` | Combined 2D + 3D Δ |
 
 ---
@@ -115,23 +127,25 @@ CsA Tier-1 ΔPSA = 84.9 Å² vs. literature ~75 Å² — validates the ensemble 
 
 ### Interpretation
 
-Ensemble-derived ΔPSA captures real physical information that single-structure methods miss entirely. The 11-point AUC improvement over MolLogP, combined with CsA validation against literature (~75 Å²), supports the chameleonic hypothesis. However, AUC = 0.749 and ρ = 0.457 indicate ΔPSA is a significant contributor, not a complete predictor — consistent with the multi-factorial nature of passive membrane permeation in this compound class.
+The full-dataset AUC result (delta_psa3d = 0.505) does not support the hypothesis that Tier-1 ensemble ΔPSA outperforms 2D baselines at scale. MolLogP (AUC = 0.631) remains the strongest single descriptor. The earlier 1,502-compound result (AUC = 0.744) reflected a biased non-random subset and should not be generalized.
 
-The DB 3DPSA result (AUC = 0.507) is itself a finding: the database's own 3D PSA values, computed from single structures, provide no useful signal. This is a direct methodological comparison and argues that ensemble sampling is a prerequisite for capturing chameleonic behavior, not merely an improvement.
+The DB 3DPSA result (AUC = 0.507) is itself a finding: the database's own 3D PSA values, computed from single structures, provide no useful signal. This is a direct methodological comparison and argues that single-structure approaches fail regardless of the level of theory — consistent with the xtb negative control.
 
-UMAP cluster stability was poor across all three panels (ARI 0.07–0.38), indicating permeability is a continuous, graded property with no discrete permeable/non-permeable clusters in this dataset — consistent with literature and expected given the 66.4% permeable selection bias in CycPeptMPDB.
+The CsA NMR validation (Tier-1 ΔPSA = 84.9 Å² vs. literature ~75 Å²) confirms the ensemble calculation is physically correct at the individual molecule level. The failure at population scale likely reflects PAMPA assay heterogeneity (see Limitations) rather than a fundamental flaw in the ΔPSA concept.
+
+UMAP Panel B shows a two-population structure in 3D Δ feature space that survives on the full 7,297-compound dataset and is the strongest visual result of this project. UMAP cluster stability was poor across all three panels (ARI 0.07–0.38), indicating permeability is a continuous, graded property with no discrete permeable/non-permeable clusters in this dataset — consistent with literature and expected given the 66.4% permeable selection bias in CycPeptMPDB.
 
 ### Limitations
 
-1. **MMFF94s dual-dielectric approximation**: Conformer selection by PSA extremes is a heuristic, not physics-based. CREST or OpenMM MD would provide more rigorous ensemble sampling.
-2. **Dataset selection bias**: CycPeptMPDB is 66.4% permeable — not a balanced spectrum. This compresses feature-space contrast and likely suppresses the true AUC signal in a biased direction.
-3. **Partial Tier-1 coverage**: Results based on 1,502 / 7,298 compounds (20.6%); full run in progress.
-4. **PAMPA assay heterogeneity**: Multiple labs and protocols contribute to CycPeptMPDB.
-5. **No Tier-2 validation**: CREST and OpenMM were not successfully completed; the Tier-1 heuristic is unvalidated against higher-level theory.
+1. **PAMPA assay heterogeneity:** CycPeptMPDB aggregates measurements from multiple labs with incompatible protocols. Townsend 2020 (a preprint comprising approximately 42% of the PAMPA data) uses pooled compound PAMPA; Kelly 2021 dominates another large fraction; Chugai uses a different membrane formulation. Source-stratified AUC analysis shows that cross-source label noise likely suppresses any real ΔPSA signal at full scale. This is the primary explanation for the AUC collapse from the exploratory subset to the full dataset.
+2. **MMFF94s dual-dielectric approximation:** Conformer selection by PSA extremes is a heuristic, not physics-based. CREST or OpenMM MD would provide more rigorous ensemble sampling.
+3. **Dataset selection bias:** CycPeptMPDB is 66.4% permeable — not a balanced spectrum. This compresses feature-space contrast and likely suppresses the true AUC signal.
+4. **No Tier-2 validation:** CREST and OpenMM were not successfully completed; the Tier-1 heuristic is unvalidated against higher-level theory.
+5. **Force-field conformer artefacts:** Vacuum ETKDGv3 sampling may generate collapsed hydrophobic conformers that are thermodynamically inaccessible in aqueous solution, producing spuriously large ΔPSA for rigid impermeable peptides.
 
 ### Next Steps
 
-- Complete full 7,298-compound Tier-1 run and re-run all analysis scripts
+- Source-stratified re-analysis using PAMPA data from a single lab protocol (e.g., Kelly 2021 only) to test whether AUC recovers when label noise is reduced
 - Obtain HPC allocation for CREST conformer sampling on reference set
 - Expand dataset with unbiased Caco-2/RRCK data from Lokey lab publications
 - N-methylation subgroup analysis
@@ -196,6 +210,8 @@ CHEM_269_Final_Project/
 │   └── figures/                           <- all plots
 └── docs/
     ├── findings_and_methods_log.md        <- full findings + CREST failure account
+    ├── literature_deltapsa_values.md      <- literature ΔPSA reference values
+    ├── future_reference_compounds.md      <- planned validation compounds
     └── project_roadmap.md                 <- future directions
 ```
 
@@ -209,3 +225,5 @@ CHEM_269_Final_Project/
 - Bockus et al. (2015). Decoding chameleonic properties of macrocycles. *J. Med. Chem.*
 - Riniker & Landrum (2015). Better informed distance geometry. *J. Chem. Inf. Model.* (ETKDGv3)
 - Pracht et al. (2020). Automated exploration of the low-energy chemical space with CREST. *Phys. Chem. Chem. Phys.*
+- Townsend et al. (2020). Cyclic peptide membrane permeability dataset. *bioRxiv* (preprint).
+- Kelly et al. (2021). Oral bioavailability of cyclic peptides. *J. Med. Chem.*

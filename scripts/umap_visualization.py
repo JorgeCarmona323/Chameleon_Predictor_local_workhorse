@@ -86,6 +86,7 @@ HDBSCAN_PARAMS = dict(
     min_samples            = 10,
     cluster_selection_method = "eom",
     metric                 = "euclidean",  # on 2D UMAP coordinates
+    gen_min_span_tree      = True,         # required for relative_validity_ (DBCV)
 )
 
 FEATURE_PANELS = {
@@ -366,7 +367,7 @@ def make_dual_track_panel(
     # HDBSCAN on 2D UMAP coordinates
     print(f"  [Track B] HDBSCAN (min_cluster_size={HDBSCAN_PARAMS['min_cluster_size']}) ...")
     hdb_labels = np.full(len(sub), -1, dtype=int)
-    sil_hdb    = np.nan
+    dbcv_hdb   = np.nan
 
     if _HDBSCAN_AVAILABLE:
         clusterer  = hdbscan_lib.HDBSCAN(**HDBSCAN_PARAMS)
@@ -375,12 +376,12 @@ def make_dual_track_panel(
         n_noise    = (hdb_labels == -1).sum()
         print(f"  HDBSCAN: {n_hdb} clusters + {n_noise} noise "
               f"({100*n_noise/len(sub):.1f}%)")
-        non_noise_mask = hdb_labels != -1
-        if len(set(hdb_labels[non_noise_mask])) > 1:
-            sil_hdb = silhouette_score(
-                X_red[non_noise_mask], hdb_labels[non_noise_mask], metric="cosine"
-            )
-            print(f"  Silhouette (HDBSCAN non-noise, cosine, PCA coords): {sil_hdb:.4f}")
+        # DBCV (Density-Based Cluster Validity) — the correct metric for HDBSCAN.
+        # Silhouette assumes convex clusters; DBCV measures density within vs. between
+        # clusters and handles arbitrary shapes. Available via relative_validity_ when
+        # gen_min_span_tree=True. Range: -1 (worst) to +1 (best).
+        dbcv_hdb = float(clusterer.relative_validity_)
+        print(f"  DBCV (relative_validity_): {dbcv_hdb:.4f}")
     else:
         print("  HDBSCAN skipped (hdbscan not installed)")
 
@@ -449,9 +450,9 @@ def make_dual_track_panel(
                 c=[cmap_hdb(int(lab) % 20)], s=8, alpha=0.6, rasterized=True,
                 label=f"C{lab} n={mask.sum()} ({pct_perm:.0f}%)",
             )
-    sil_str2 = f"sil={sil_hdb:.3f}" if not np.isnan(sil_hdb) else ""
+    dbcv_str = f"DBCV={dbcv_hdb:.3f}" if not np.isnan(dbcv_hdb) else ""
     n_hdb_clusters = len(unique_hdb) - (1 if -1 in unique_hdb else 0)
-    ax2.set_title(f"Track B — HDBSCAN ({n_hdb_clusters} clusters)\n{sil_str2}")
+    ax2.set_title(f"Track B — HDBSCAN ({n_hdb_clusters} clusters)\n{dbcv_str}")
     ax2.set_xlabel("UMAP 1"); ax2.set_ylabel("UMAP 2")
     ax2.legend(fontsize=6, ncol=2, loc="upper right")
 
@@ -552,7 +553,7 @@ def make_dual_track_panel(
         "sil_kmedoids":             round(float(sil_km), 4) if not np.isnan(sil_km) else None,
         "n_hdbscan_clusters":       n_hdb_clusters,
         "n_hdbscan_noise":          int((hdb_labels == -1).sum()),
-        "sil_hdbscan":              round(float(sil_hdb), 4) if not np.isnan(sil_hdb) else None,
+        "dbcv_hdbscan":             round(float(dbcv_hdb), 4) if not np.isnan(dbcv_hdb) else None,
         "double_validated_islands": int(conv_df["double_validated"].sum()),
         "cycloA_found":             int(cycloA_mask.sum()),
         "umap_stability_min_ari":   round(stability_ari, 4) if not np.isnan(stability_ari) else None,

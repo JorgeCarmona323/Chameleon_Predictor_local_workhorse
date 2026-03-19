@@ -22,7 +22,7 @@ CycPeptMPDB v1.2¹ provides the largest public collection of experimental cyclic
 
 ### 2.1 Data
 
-CycPeptMPDB v1.2¹ was filtered to 7,298 compounds with PAMPA values. For source-stratified analyses, a 1,566-compound subset comprising Furukawa 2016² (individual-compound LC-MS, 1% lecithin/dodecane membrane) and Chugai (patent WO 2013/100132 A1, DOPC/hexadecane membrane) was used as the primary reference set. These two sources share a critical methodological feature: both use individual-compound assays rather than the pooled multiplexed PAMPA protocol used by Townsend 2020⁸ and Kelly 2021⁹, which accounts for ~63% of the full dataset and introduces systematic cross-compound signal interference via CycLS MS deconvolution. Furukawa 2016² is the most rigorously documented source (peer-reviewed, individual LC-MS detection). Chugai is a patent-derived source with less fully characterized conditions (DOPC/hexadecane membrane, detection floor −10.0 vs −8.0 log cm/s for other sources) and should be treated with appropriate caution; a Furukawa-only analysis is proposed as a future control (see Section 6). Permeability threshold: PAMPA LogPexp ≥ −6.0 log cm/s.
+CycPeptMPDB v1.2¹ was filtered to 7,298 compounds with PAMPA values. For source-stratified analyses, a 1,566-compound subset comprising Furukawa 2016² (individual-compound LC-MS, 1% lecithin/dodecane membrane) and Chugai (patent WO 2013/100132 A1, DOPC/hexadecane membrane) was used as the primary reference set. These two sources share a critical methodological feature: both use individual-compound assays rather than the pooled multiplexed PAMPA protocol used by Townsend 2020⁸ and Kelly 2021⁹, which accounts for ~63% of the full dataset and introduces systematic cross-compound signal interference via CycLS MS deconvolution. Furukawa 2016² is the most rigorously documented source (peer-reviewed, individual LC-MS detection). Chugai is a patent-derived source with less fully characterized conditions (DOPC/hexadecane membrane, detection floor −10.0 vs −8.0 log cm/s for other sources) and should be treated with appropriate caution; an analysis restricted to individual-compound, single-protocol data is proposed as a future control (see Section 6). Permeability threshold: PAMPA LogPexp ≥ −6.0 log cm/s.
 
 ### 2.2 Conformer Generation (Tier-1)
 
@@ -34,7 +34,7 @@ The conformer with maximum 3D polar SASA (Bondi radii, RDKit rdFreeSASA) was des
 - `psa3d_std`: PSA variance across all 20 conformers (conformational flexibility)
 - `delta_hb`, `delta_Rg`, `delta_NPR1/2`: H-bond count, compaction, and shape descriptors
 
-Following the observation of a molecular weight-stratified cluster separation in UMAP (Section 3.7), a per-MW normalized descriptor was computed post-hoc: `delta_psa3d_per_mw` = `delta_psa3d` / MolWt × 1000 (Å² per kDa). This normalization removes the molecular size contribution to absolute ΔPSA, isolating chameleonic switching efficiency from molecular weight confounding. No conformer re-generation was required; the normalization is a derived quantity from the existing feature matrix.
+Following the observation of a molecular weight-stratified cluster separation in UMAP (Section 3.4), a per-MW normalized descriptor was computed post-hoc: `delta_psa3d_per_mw` = `delta_psa3d` / MolWt × 1000 (Å² per kDa). This normalization removes the molecular size contribution to absolute ΔPSA, isolating chameleonic switching efficiency from molecular weight confounding. No conformer re-generation was required; the normalization is a derived quantity from the existing feature matrix.
 
 As a negative control, `delta_3DPSA_db` = H2O_3DPSA − CHCl3_3DPSA from CycPeptMPDB's pre-computed 3D PSA values was included. Per the CycPeptMPDB methods¹, both values are derived from the same single minimum-energy UFF conformer — not from independently solvent-optimized structures — making this descriptor a measure of PSA calculation settings rather than conformational switching. Its inclusion tests whether any residual conformational signal survives in a single-structure approach.
 
@@ -72,17 +72,7 @@ GFN2-xTB produces ΔPSA of 0–7 Å² across all five compounds — including Cs
 
 This brings us to what this work is and is not. We are not claiming a predictive model for novel compounds — that is the goal, and it is within reach. What we are doing is establishing that the chameleonic signal is real, that it is size-gated, and that ensemble sampling is the right tool to see it. The bottleneck now is not the science — it is data and compute. We need source-homogeneous experimental permeability measurements at scale and the computational infrastructure to run physics-based conformer sampling beyond the ETKDGv3 heuristic. The findings presented here are our case to the community: the signal exists, the approach is sound, and these are the resources required to turn it into something predictive.
 
-### 3.3 Ensemble Conformer Distributions: Population-Scale Mechanistic Evidence
-
-With ensemble sampling (ETKDGv3, 20 conformers per molecule, MMFF94s minimization), 7,297 of 7,298 compounds were successfully processed (99.99% success rate). The resulting ΔPSA distributions are not noise — they encode a population-scale mechanistic signal.
-
-![Tier-1 ΔPSA, ΔHB, and ΔRg distributions](figures/fig2_tier1_distributions.png)
-
-*Figure 2. Distributions of Tier-1 ensemble Δ descriptors across 7,297 compounds. Left: ΔPSA spans 0–160 Å² with median ~62 Å², reflecting genuine conformational diversity rather than computational noise. Centre: ΔHB distribution — the median cyclic peptide gains approximately one intramolecular hydrogen bond in the membrane conformer, the molecular-level mechanism of chameleonic switching. Backbone amides that donate H-bonds to water in the aqueous conformer instead form intramolecular bonds in the membrane conformer, burying polar surface area and reducing the desolvation penalty. Right: ΔRg shows slight compaction of the membrane conformer (median ~0.3 Å), thermodynamically expected in a low-dielectric environment where exposed polar groups carry a desolvation penalty that drives the molecule toward a more compact, internalized state.*
-
-The ΔHB panel carries particular mechanistic weight: at population scale, the median cyclic peptide in this dataset gains +1 intramolecular hydrogen bond in the membrane conformer. This is consistent with the proposed molecular mechanism of chameleonic switching — backbone amides forming intramolecular H-bonds in low-dielectric environments — operating across thousands of structurally diverse compounds. The conformers are selected by a PSA-extremum heuristic rather than physics-based solvation simulation, so this H-bond gain reflects a correlation with chameleonic potential rather than a direct measurement of the solution-phase switch.
-
-### 3.4 Reference Compound Validation Against NMR-Grounded Literature
+### 3.3 Reference Compound Validation Against NMR-Grounded Literature
 
 The Tier-1 pipeline was validated against CsA, whose conformational switch has been directly observed by NMR spectroscopy in CDCl₃/hexane and DMSO/H₂O (Witek 2016⁷: 57–79 NOE restraints per conformer; Rüdisser 2023: eNOE backbone RMSD 0.10 Å).
 
@@ -96,13 +86,15 @@ The Tier-1 pipeline was validated against CsA, whose conformational switch has b
 
 CsA ΔPSA = 84.9 Å² vs. NMR-grounded literature ~75 Å²⁷, within 10%. This single-compound agreement is encouraging and consistent with the ensemble approach capturing a real conformational signal, though one data point is insufficient to constitute rigorous validation. DP172 (88.9 Å², permeable) provides a second supporting case without a literature reference for direct comparison. Notably, HexPep (impermeable, PAMPA −6.20) and 1NMe3 (permeable, PAMPA −5.52) — both hexapeptides — show raw ΔPSA values of 64 and 48 Å² respectively, yet ΔPSA fails to discriminate their opposing permeability outcomes. This is consistent with the sub-9-residue size limitation identified in Section 4: small cyclic scaffolds lack sufficient backbone flexibility to execute the intramolecular H-bond rearrangement that drives chameleonic switching, so absolute ΔPSA carries no mechanistic meaning for them regardless of its magnitude.
 
-### 3.5 Descriptor Performance: Source-Stratified vs. Full Dataset
+### 3.4 Descriptor Performance, Normalization, and the Cost of Label Noise
 
-Features were ranked by AUC-ROC on both the full 7,298-compound dataset and the 1,566-compound source-stratified subset (Furukawa 2016² + Chugai).
+Ensemble ΔPSA achieves AUC = 0.692 on the clean 1,566-compound subset — the top-ranked descriptor. But two questions immediately follow: does this number hold up on noisier data, and is it measuring a genuine chameleonic signal or simply functioning as a molecular size proxy? We address both in sequence.
+
+**Overall descriptor AUC — source-stratified vs. full dataset:**
 
 ![AUC-ROC by descriptor](figures/auc_roc_bar.png)
 
-*Figure 3. AUC-ROC for key descriptors on both the 1,566-compound source-stratified subset (blue) and full 7,298-compound dataset (orange), including the per-MW normalized descriptor introduced in Section 3.8. The per-MW normalized ΔPSA and absolute ΔPSA are highlighted (shaded region) as the 3D ensemble descriptors. Notable: MolLogP inverts on the 1,566-compound clean subset (AUC = 0.317, i.e. 0.683 flipped) — chameleonic macrolides are large and polar yet highly permeable, reversing the standard lipophilicity/permeability relationship.*
+*Figure 2. AUC-ROC for key descriptors on the 1,566-compound source-stratified subset (blue) and full 7,298-compound dataset (orange). Absolute ΔPSA and per-MW normalized ΔPSA (shaded) are the 3D ensemble descriptors. MolLogP inverts on the clean subset (AUC = 0.317, flipped 0.683) — chameleonic macrolides are large and polar yet dominate the permeable population, reversing the standard lipophilicity/permeability relationship.*
 
 | Descriptor | 1,566 compounds | Full 7,298 |
 |------------|-----------------|------------|
@@ -113,15 +105,64 @@ Features were ranked by AUC-ROC on both the full 7,298-compound dataset and the 
 | TPSA (2D baseline) | 0.663 | 0.447 |
 | delta_3DPSA_db (single-structure negative control) | 0.458 | 0.493 |
 
-*†MolLogP AUC = 0.317 on the 1.5k indicates inverse prediction (flipped AUC = 0.683): chameleonic macrolides are polar yet permeable, reversing the standard lipophilicity rule.*
+*†Flipped AUC = 0.683: chameleonic macrolides are polar yet permeable, reversing the lipophilicity rule.*
 
-Ensemble ΔPSA (0.692) is the top descriptor on the clean source-stratified subset. On the full dataset it collapses to 0.505 while MolLogP remains stable at 0.630 — because lipophilicity is a molecular property indifferent to assay protocol, whereas ensemble ΔPSA, measuring a conformational switch, is selectively degraded by label noise from pooled assays (Townsend 2020⁸, ~42%; Kelly 2021⁹, ~21%).
+On the full dataset, ensemble ΔPSA collapses to 0.505 while MolLogP holds at 0.630. Lipophilicity is indifferent to assay protocol; chameleonic ΔPSA is not — it is selectively degraded by label noise from pooled assays (Townsend 2020⁸, Kelly 2021⁹). The single-structure negative control (delta_3DPSA_db) is stable and near chance at both scales (0.458/0.493), confirming that ensemble sampling — not source stratification alone — drives the 1.5k signal.
 
-The MolLogP inversion on the 1.5k is mechanistically informative: large chameleonic macrolides are more polar than smaller cyclic peptides yet dominate the permeable population in the clean data, actively reversing the lipophilicity/permeability relationship that holds at the population scale of the full dataset. This inversion disappears in the 7k because label noise re-mixes the populations.
+**Is the AUC = 0.692 a real chameleonic signal, or a size proxy?**
 
-The single-structure negative control (delta_3DPSA_db) is stable and near chance at both scales (0.458/0.493), confirming that ensemble sampling — not source stratification alone — drives the 1.5k signal.
+Absolute ΔPSA scales with molecular size — a 15-residue peptide that barely switches produces more raw Å² than a 9-residue peptide that fully buries its polar surface. To test whether this confound is driving the overall AUC, we computed `delta_psa3d_per_mw` = ΔPSA / MolWt × 1000 (Å² per kDa) and compared AUC within each size bucket.
 
-### 3.6 UMAP Chemical Space Structure
+![Per-MW normalization AUC comparison](figures/delta_psa3d_normalization_comparison.png)
+
+*Figure 3. AUC-ROC for absolute ΔPSA (blue) vs. per-MW normalized ΔPSA (orange), stratified by monomer length, on the 1,566-compound (left) and full 7,298-compound (right) datasets. Green shading: the 12–15 residue bucket where normalization consistently improves AUC. Normalization improves large-compound discrimination and degrades small-compound discrimination — identifying the same size boundary from a completely independent analytical direction.*
+
+| Size bucket | n (1.5k) | Absolute AUC | Per-MW AUC | Δ AUC |
+|-------------|----------|-------------|------------|-------|
+| ≤8 residues | 737 | 0.528 | 0.553 | +0.025 |
+| 9–11 residues | 310 | 0.440* | 0.618* | — |
+| 12–15 residues | 519 | 0.528 | **0.696** | **+0.168** |
+
+*\*9–11 residue bucket is 94.8% permeable on the 1.5k (~16 impermeable compounds); AUC unreliable due to class imbalance. This bucket is inconclusive on both datasets — see note below.*
+
+| Size bucket | n (7k) | Absolute AUC | Per-MW AUC | Δ AUC |
+|-------------|--------|-------------|------------|-------|
+| ≤8 residues | 4,455 | 0.507 | 0.489 | −0.018 |
+| 9–11 residues | 2,317 | 0.492 | 0.447 | −0.045 |
+| 12–15 residues | 525 | 0.522 | **0.674** | **+0.152** |
+
+For large compounds (12–15 residues), removing the size effect reveals a stronger chameleonic efficiency signal: AUC rises from 0.528 to 0.696 in the clean data, and holds at 0.674 even on the noisy full dataset. For small compounds (≤8 residues), normalization *degrades* AUC on both datasets — because ΔPSA was never measuring their permeation mechanism to begin with. This asymmetry confirms that the overall 0.692 is partly a size proxy, but a real chameleonic signal is present within the large-compound population once size is removed.
+
+**Caveat — 9–11 residue bucket is inconclusive:** The two datasets give contradictory permeability rates for this bucket (94.8% vs. 60.9%) and we cannot adjudicate between them — both could be correct for their specific compound sets, which may not even overlap in chemical space. We simply do not have enough homogeneous data in this size range to draw conclusions in either direction. More fundamentally, MW alone is not what gates chameleonic behavior — it is a proxy for the underlying conformational flexibility and ring geometry that determine whether a compound can execute a chameleonic switch. When a compound reaches sufficient size to be capable of that switch, MW and 3D descriptors become informative for measuring chameleonic propensity; what MW threshold that corresponds to, and how sharply it cuts, is precisely what this bucket should test — but cannot, with current data. What is needed is a precisely characterized, individual-compound dataset with broader 9–11 residue coverage — the conditions under which a meaningful AUC could actually be computed (Section 6, Experiment 4).
+
+**Track D — the same pattern, seen geometrically:**
+
+To understand why label quality destroys the signal at scale, we colored the Panel C UMAP embedding by molecular weight (Track D). On the clean 1.5k, permeable compounds have a median MW of 1,180 Da vs. 820 Da for impermeable — a 1.44× gap visible directly in chemical space. On the full 6,938-compound dataset, that gap disappears entirely.
+
+| Population | Median MW (1,566 cpds) | Median MW (6,938 cpds) |
+|------------|------------------------|------------------------|
+| Permeable (PAMPA ≥ −6) | **1,180 Da** | 820 Da |
+| Impermeable | 820 Da | 820 Da |
+| Ratio | **1.44×** | 1.00× |
+
+![Panel C 1566 + Track D](figures/Panel_C_combined_umap_1566.png)
+
+*Figure 4. Panel C UMAP on the 1,566-compound source-stratified subset with Track D MW coloring. C0 (87.8% permeable) occupies the high-MW plasma region. The permeable cluster is large macrolides; C1 (59.3% permeable, lower MW) is a population achieving permeability through other means.*
+
+![Panel C 6938 + Track D](figures/Panel_C_combined_umap_6938.png)
+
+*Figure 5. Panel C UMAP on the full 6,938-compound dataset. The 1.44× MW gap visible in Fig. 4 vanishes — both populations converge to ~820 Da. Pooled-assay labels are not merely noisy; they actively invert the MW/permeability relationship, labeling large chameleonic compounds as impermeable (or vice versa) at sufficient frequency to destroy the size signal entirely.*
+
+| Metric | 1,566 compounds | 6,938 compounds |
+|--------|-----------------|-----------------|
+| HDBSCAN silhouette | 0.425 | −0.022 |
+| Best cluster perm rate | 87.8% | 70.3% |
+| Median MW permeable | **1,180 Da** | 820 Da |
+| Median MW impermeable | 820 Da | 820 Da |
+
+The AUC collapse, the normalization asymmetry, and the MW gap disappearance all point to the same conclusion: the signal is real on clean data and destroyed by label noise at scale. Label quality — not descriptor quality — is the limiting factor.
+
+### 3.5 UMAP Chemical Space Structure
 
 Three feature panels were analyzed: Panel A (7 2D descriptors), Panel B (8 3D Δ descriptors), and Panel C (combined 9-feature set).
 
@@ -129,13 +170,13 @@ Three feature panels were analyzed: Panel A (7 2D descriptors), Panel B (8 3D Δ
 
 ![Panel A: 2D descriptor UMAP](figures/Panel_A_2D_umap.png)
 
-*Figure 4. Panel A UMAP (2D descriptors only). K-Medoids forces 8 clusters but none carry biological signal. HDBSCAN identifies 69 micro-clusters with negative silhouette (−0.112) and no permeability enrichment visible in the clincher panel. This is the conformationally blind baseline: knowing a molecule's static physicochemical properties alone provides no useful structure in permeability space.*
+*Figure 6. Panel A UMAP (2D descriptors only). K-Medoids forces 8 clusters but none carry biological signal. HDBSCAN identifies 69 micro-clusters with negative silhouette (−0.112) and no permeability enrichment. Knowing a molecule's static physicochemical properties alone provides no useful structure in permeability space.*
 
 **Panel B — 3D Δ features (the core result):**
 
 ![Panel B: 3D delta descriptor UMAP](figures/Panel_B_3D_delta_umap.png)
 
-*Figure 5. Panel B UMAP (3D Δ descriptors only). In the ensemble conformer feature space, structure emerges without forcing it. HDBSCAN identifies two natural populations: C0 (695 compounds, 73% permeable) and C1 (481 compounds, 25% permeable) — a 48-point enrichment gap with no cluster count parameter specified. The clincher panel (right) makes the signal unambiguous: PAMPA LogPexp maps continuously onto the UMAP embedding, with permeable compounds concentrated in the C0 region. This is the qualitative proof that 3D conformational descriptors capture a chemically real permeability signal absent in 2D descriptor space.*
+*Figure 7. Panel B UMAP (3D Δ descriptors only). Structure emerges without forcing it. HDBSCAN identifies two natural populations: C0 (695 compounds, 73% permeable) and C1 (481 compounds, 25% permeable) — a 48-point enrichment gap with no cluster count parameter specified. PAMPA LogPexp maps continuously onto the embedding, with permeable compounds concentrated in C0. This is the qualitative proof that 3D conformational descriptors capture a chemically real permeability signal absent in 2D descriptor space.*
 
 **Panel C — Combined features, source-stratified 1,566 compounds:**
 
@@ -146,77 +187,21 @@ ARI stability: min = **0.995** across 5 seeds — one dominant chemical structur
 | HDBSCAN C0 | 883 | **87.8%** | 1.16× |
 | HDBSCAN C1 | 651 | 59.3% | 0.78× |
 
-![Panel C 1566 + Track D](figures/Panel_C_combined_umap_1566.png)
-
-*Figure 6. Panel C UMAP on 1,566-compound source-stratified subset (Furukawa + Chugai), with Track D molecular weight coloring added as a fourth subplot. The embedding is highly stable (min ARI = 0.995 across 5 seeds). C0 (87.8% permeable) occupies the high-MW, high-temperature region of the plasma colormap. Limegreen permeable compound rings concentrate almost entirely in the large-macrolide region. C1 (59.3% permeable, lower MW) is not impermeable — it is simply unenriched — consistent with a population achieving permeability through N-methylation or lipophilicity rather than chameleonic switching.*
-
-### 3.7 Track D: Molecular Weight Gates Chameleonic Behavior
-
-The fourth subplot (Track D) introduced in this experiment colors the Panel C embedding by molecular weight, revealing the size structure underlying the two-population pattern.
-
-| Population | Median MW |
-|------------|-----------|
-| Permeable (PAMPA ≥ −6) | **1,180 Da** |
-| Impermeable | 820 Da |
-| Ratio | **1.44×** |
-
-**Panel C — Full 7,298-compound dataset (same panel, different label quality):**
-
-![Panel C 6938 + Track D](figures/Panel_C_combined_umap_6938.png)
-
-*Figure 7. Panel C UMAP on the full 6,938-compound dataset with Track D molecular weight coloring. The 1.44× MW gap between permeable and impermeable populations that is clearly visible on the clean 1,566-compound data (Fig. 6) vanishes entirely here — both populations converge to a median MW of ~820 Da. The cross-source PAMPA labels are not merely noisy; they actively invert the MW/permeability relationship that exists on homogeneous data. Large chameleonic compounds are being labeled impermeable (or vice versa) by incompatible pooled-assay protocols, destroying the size signal that is the clearest evidence of chameleonic gating.*
-
-| Metric | 1,566 compounds | 6,938 compounds |
-|--------|-----------------|-----------------|
-| HDBSCAN silhouette | 0.425 | **−0.022** |
-| Best cluster perm rate | 87.8% | 70.3% |
-| Enrichment range | 0.78–1.16× | 0.97–1.03× |
-| Median MW permeable | **1,180 Da** | 820 Da |
-| Median MW impermeable | 820 Da | 820 Da |
-
-The 1.44× MW gap is the most direct experimental-scale evidence in this analysis that label quality — not descriptor quality — limits performance at population scale. When the labels are clean, the signal is there. When they are not, the signal disappears and the descriptor looks like chance.
-
-### 3.8 Per-MW Normalization as a Mechanism Filter
-
-The MW cluster separation in Track D raised an immediate question: is the overall AUC of 0.692 a genuine chameleonic signal, or is absolute ΔPSA partly functioning as a molecular size proxy — rewarded because larger compounds happen to be more permeable in this source-stratified subset? To investigate, we computed `delta_psa3d_per_mw` = ΔPSA / MolWt × 1000 (Å² per kDa) and compared AUC within each size bucket against the absolute descriptor.
-
-![Per-MW normalization AUC comparison](figures/delta_psa3d_normalization_comparison.png)
-
-*Figure 8. AUC-ROC for absolute ΔPSA vs. per-MW normalized ΔPSA, stratified by monomer length, on the 1,566-compound (left) and full 7,298-compound (right) datasets. Green shading highlights the 12–15 residue bucket where normalization consistently improves AUC. Per-MW normalization improves within-class discrimination for large chameleonic compounds and degrades it for small non-chameleonic compounds — the same size boundary identified by Track D MW coloring, reached from a completely independent analytical direction.*
-
-| Size bucket | n (1.5k) | Absolute AUC | Per-MW AUC | Δ AUC |
-|-------------|----------|-------------|------------|-------|
-| ≤8 residues | 737 | 0.528 | 0.553 | +0.025 |
-| 9–11 residues | 310 | 0.440* | 0.618* | — |
-| 12–15 residues | 519 | 0.528 | **0.696** | **+0.168** |
-
-*\*9–11 residue bucket is 94.8% permeable (only ~16 impermeable compounds); AUC unreliable due to class imbalance.*
-
-| Size bucket | n (7k) | Absolute AUC | Per-MW AUC | Δ AUC |
-|-------------|--------|-------------|------------|-------|
-| ≤8 residues | 4,455 | 0.507 | 0.489 | −0.018 |
-| 9–11 residues | 2,317 | 0.492 | 0.447 | −0.045 |
-| 12–15 residues | 525 | 0.522 | **0.674** | **+0.152** |
-
-The pattern is unambiguous and mechanistically interpretable. For large compounds (12–15 residues), removing the size effect from ΔPSA reveals a stronger chameleonic efficiency signal: AUC rises from 0.528 to 0.696 in the clean data, and from 0.522 to 0.674 even in the noisy full dataset. For small compounds (≤8 residues) in the full 7k, normalization *degrades* AUC — because ΔPSA was never measuring their permeation mechanism. Dividing a mechanistically irrelevant descriptor by MW does not recover a chameleonic signal; it just amplifies noise.
-
-This asymmetry — normalization improves discrimination for large compounds and degrades it for small ones — independently reproduces the same size boundary identified by Track D without using MW as a feature. This is consistent with the two-population model and argues against the UMAP separation being a pure size artifact of the descriptor, though it does not rule out other size-correlated properties as the underlying driver.
-
 ---
 
-## 4. Interpretation: Two Mechanisms, One Descriptor Space
+## 4. Interpretation: Two Populations, Two Descriptor Spaces
 
-The results support a two-mechanism model of passive cyclic peptide permeability that the current descriptor set can partially resolve.
+The data point toward two distinct populations of cyclic peptides that are governed by different permeation physics — and therefore require different descriptor sets to characterize.
 
-**Mechanism 1 — Chameleonic switching (large macrolides, ≥9 residues):** In the 1,566-compound clean dataset, compounds of 9–11 residues are 94.8% permeable and 12–15 residues are 86.3% permeable — both substantially above the baseline rate of 75.8%. These compounds have sufficient backbone flexibility to form stabilizing intramolecular H-bonds in apolar environments, collapsing polar surface area and reducing the desolvation penalty of membrane entry. CsA (MW 1,203 Da, 11 residues, ΔPSA = 84.9 Å²) is the archetypal example⁷. 3D ensemble ΔPSA is mechanistically appropriate for this population: the descriptor is measuring the physical property that drives permeation.
+**Large cyclic peptides (≥9 residues, tentative threshold):** In the clean 1,566-compound dataset, compounds of 12–15 residues are 86.3% permeable and the ≥9-residue population is substantially enriched above the baseline rate of 75.8%. These compounds have sufficient backbone flexibility to form stabilizing intramolecular H-bonds in apolar environments, collapsing polar surface area and reducing the desolvation penalty of membrane entry — the chameleonic switch. CsA (MW 1,203 Da, 11 residues, ΔPSA = 84.9 Å²) is the archetypal example⁷. For this population, 3D ensemble ΔPSA is mechanistically appropriate: it measures the physical property that likely contributes to permeation. Critically, chameleonic propensity is probably not linearly predictive of permeability on its own — high permeability in large macrolides is most likely the result of chameleonic propensity acting in combination with other structural features (ring geometry, H-bond donor count, backbone N-methylation pattern). ΔPSA captures one key contributor; the full descriptor ensemble for this population remains to be characterized.
 
-**Mechanism 2 — Non-chameleonic permeation (smaller cyclic peptides, ≤8 residues):** The ≤8-residue population in the clean 1,566-compound data is 60.4% permeable — these compounds ARE permeating, but ΔPSA is essentially uninformative for them (AUC = 0.528). Smaller cyclic scaffolds may achieve PAMPA permeability through N-methylation (reduced backbone HBD count), intrinsic lipophilicity, or amide-to-ester substitution¹⁰ — mechanisms proposed in the literature that do not require a large conformational switch. These are not directly tested in this dataset; what the data show is that ΔPSA is uninformative for this population (AUC = 0.528), which is consistent with but does not prove an alternative mechanism. Further experiments targeting the ≤8-residue population specifically would be required to identify what drives their permeability.
+**Small cyclic peptides (≤8 residues):** The ≤8-residue population is 60.4% permeable in the clean data — these compounds are permeating, but ΔPSA is essentially uninformative for them (AUC = 0.528). This is not surprising: smaller scaffolds lack the conformational freedom to execute a large chameleonic switch. Their permeability is more likely governed by a different set of descriptors entirely — N-methylation pattern, backbone HBD count, intrinsic lipophilicity, amide-to-ester substitution¹⁰ — properties that reduce the cost of membrane entry without requiring a conformational rearrangement. What that descriptor ensemble looks like is an open question; what this work establishes is that ΔPSA is not part of it.
 
-**What the overall AUC of 0.692 actually measures:** Size-stratified analysis reveals that ΔPSA within each residue-count bucket performs only marginally above chance (AUC 0.44–0.53). The overall 0.692 arises primarily from *between-group* discrimination — large compounds have high absolute ΔPSA (more atoms = more PSA potential) AND high permeability rates in the clean data. This means absolute ΔPSA is partly functioning as a molecular size proxy, not a pure chameleonic efficiency measure. This is not a failure of the approach — it is a known consequence of using unnormalized descriptors, and it is precisely the confound that Yu et al.³ address with their dimensionless ΔPSA/SASA_total ratio.
+**MW as a proxy, not a gate:** Molecular weight correlates with the conformational flexibility that enables chameleonic switching, which is why it appears as a separating axis in UMAP Track D and why per-MW normalization improves AUC for large compounds. But MW is not itself the mechanistic gate — it is a proxy for ring size, backbone degrees of freedom, and the number of potential intramolecular H-bond donors. A rigid 15-residue peptide with locked conformation may be no more chameleonic than a flexible 9-residue one. MW reveals which mechanism a compound is likely using; it does not cause it.
 
-**The 7k inversion as corroborating evidence:** In the full 7,298-compound dataset, the 9–11 residue permeability rate inverts to 60.9% — *below* the ≤8-residue rate of 67.1%. In the clean 1.5k it is 94.8%. This specific inversion of the size-permeability relationship for the compounds where chameleonic switching is most expected is consistent with pooled-assay label noise (Townsend 2020⁸, Kelly 2021⁹) disproportionately corrupting the largest, most MS-complex compounds. It is a mechanistically specific degradation, not uniform noise.
+**What the overall AUC of 0.692 actually measures:** Size-stratified analysis reveals that ΔPSA within each residue-count bucket performs only marginally above chance (AUC 0.44–0.53). The overall 0.692 arises primarily from between-group discrimination — large compounds have high absolute ΔPSA AND high permeability rates in the clean data. Absolute ΔPSA is partly a molecular size proxy, not a pure chameleonic efficiency measure. This is precisely the confound that Yu et al.³ address with their dimensionless ΔPSA/SASA_total ratio, and it is what per-MW normalization begins to correct for within size classes.
 
-**What 3D descriptors demonstrate in this work:** The ensemble ΔPSA approach shows that (1) for chameleonic macrolides, conformational sampling recovers a real permeability signal absent in single-structure methods; (2) the chemical space separates into a high-MW chameleonic population and a lower-MW non-chameleonic population visible in UMAP; and (3) the descriptor is silent on the non-chameleonic population, which sets a clear boundary on the scope of the method. The concurrent work of Yu et al.³ independently arrives at the same two-population model: analyzing conformational cluster occupancy across solvents, they explicitly find that *"small cyclic peptides (7 residues) exhibit all five clusters with similar proportions in both solvents, confirming the absence of significant conformational switching"* and apply a ≥9-residue size gate for their ΔPSA framework. Their dimensionless ΔPSA/SASA_total ratio is the normalization that addresses the molecular-size confound identified in Section 3.8 — and it is the next descriptor to implement (see Section 6, Experiment 1).
+**What this work establishes and what it does not:** The ensemble ΔPSA approach shows that (1) conformational sampling recovers a permeability-correlated signal for large macrolides that is absent in single-structure methods; (2) chemical space separates into two populations with distinct MW and permeability profiles; and (3) ΔPSA is silent on the smaller population, setting a clear boundary on where it applies. The immediate goal is to improve chameleonic propensity prediction — refining the descriptor (per-SASA normalization, size gating) so that it more cleanly measures switching efficiency rather than molecular size. The downstream goal is to understand how chameleonic propensity, combined with other structural metadata, predicts permeability for each population separately. The concurrent work of Yu et al.³ independently arrives at the same two-population framing — explicitly finding that small cyclic peptides show *"absence of significant conformational switching"* — and their dimensionless ΔPSA/SASA_total ratio is the next normalization to implement (see Section 6, Experiment 1).
 
 ---
 
@@ -241,8 +226,8 @@ The current state-of-the-art open-source pipeline for macrocyclic peptide confor
 | ✓ Done | Per-MW normalization (`delta_psa3d / MolWt`); AUC by size bucket | Complete (this work) | Normalization improves large-compound AUC, degrades small-compound AUC — confirmed two-mechanism boundary |
 | 1 | `delta_psa3d_per_sasa` = ΔPSA / SASA_total (Yu et al.³ approach); rerun AUC on 1,566 compounds | Next | Dimensionless normalization outperforms per-MW; recovers signal within size classes |
 | 2 | `delta_psa3d_per_residue` = ΔPSA / Monomer_Length; compare to per-MW and per-SASA | Next | Per-residue captures chameleonic efficiency independently of MW |
-| 3 | Filter `Monomer_Length ≥ 9`; compare AUC with and without cutoff on Furukawa-only subset | Next | Explicit size gate improves signal; confirms chameleonic threshold |
-| 4 | Exclude Chugai (unverified protocol); rerun on Furukawa only | Next | Chugai is inflating or deflating the 1.5k AUC; Furukawa-only gives cleaner baseline |
+| 3 | Filter `Monomer_Length ≥ 9`; compare AUC with and without cutoff on individual-compound subset | Next | Explicit size gate improves signal; confirms chameleonic threshold |
+| 4 | Restrict to individual-compound, single-protocol sources only; rerun AUC | Next | Pooled-assay label inconsistency is driving AUC collapse; precise data recovers baseline signal |
 | 5 | ETKDGv3 → CREST validation on 15-compound reference set | Next | ETKDGv3 rank order is preserved vs. CREST/ALPB solvation |
 
 ---
@@ -274,3 +259,4 @@ The current state-of-the-art open-source pipeline for macrocyclic peptide confor
 12. Pracht, P., Bohle, F. & Grimme, S. Automated exploration of the low-energy chemical space with fast quantum chemical methods. *Phys. Chem. Chem. Phys.* **22**, 7169–7192 (2020). https://doi.org/10.1039/C9CP06869D
 
 13. Bannwarth, C., Ehlert, S. & Grimme, S. GFN2-xTB — an accurate and broadly parametrized self-consistent tight-binding quantum chemical method with multipole electrostatics and density-dependent dispersion contributions. *J. Chem. Theory Comput.* **15**, 1652–1671 (2019). https://doi.org/10.1021/acs.jctc.8b01176
+

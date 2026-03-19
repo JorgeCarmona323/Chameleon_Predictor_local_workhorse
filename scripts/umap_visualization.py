@@ -102,6 +102,11 @@ FEATURE_PANELS = {
         "delta_3DPSA_db", "delta_psa3d", "delta_hb", "delta_Rg",
         "psa3d_spread", "delta_NPR1",
     ],
+    "Panel_C_normalized": [
+        "MolWt", "MolLogP", "TPSA",
+        "delta_3DPSA_db", "delta_psa3d_per_mw", "delta_hb", "delta_Rg",
+        "psa3d_spread", "delta_NPR1",
+    ],
 }
 
 

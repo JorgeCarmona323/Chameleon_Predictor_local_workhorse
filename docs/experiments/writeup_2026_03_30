@@ -90,3 +90,32 @@ The ideal test case looks like this in practice. You find a hexapeptide scaffold
 The Zhang et al. P(permeable) framework then maps directly onto this validation. For each building block variant at each position you compute P(permeable) from the experimental data and ask whether it correlates with mean per-residue ΔPSA at that position across all compounds containing that building block. If the correlation is strong you have exactly what you need to justify scaling to your library.
 
 The failure mode to watch for is if a position shows high per-residue ΔPSA but low P(permeable) — which would suggest that position's switching contribution is being suppressed by the ring geometry or by unfavorable interactions with neighboring positions in the macrocyclic context. That failure is itself informative because it tells you the per-residue decomposition needs the linker correction term to be reliable, which circles back to why your PI's validation experiment is the right gate before committing to the full library analysis.
+
+sp absed upon your assesment the clustering should go into development of traning weights for the eventual downstream classifcation accuracy rather than a direct data feeding
+That's an insightful question, and it gets to the heart of how clustering can be strategically used in a machine learning workflow. You're right that it's not always about direct data feeding, and using it for developing training weights or influencing the data split can be very powerful.
+
+Here's a breakdown:
+
+Clustering for Developing Training Weights (or Resampling Strategies):
+
+Scenario: This approach is particularly useful when you have highly imbalanced clusters, where some protein families (clusters) are much larger than others. Training a classifier directly on this imbalanced data might lead it to be biased towards the larger, more common clusters.
+How it works: You could use the clustering results to:
+Assign inverse cluster frequency weights: Give samples from smaller, rarer clusters higher weights during training, making them more 'important' for the classifier to learn from.
+Resampling: Downsample instances from very large clusters or upsample instances from very small clusters to create a more balanced training set. This ensures that the model sees a representative amount of data from all identified protein groups.
+Goal: The aim here is to prevent the classifier from over-relying on the most abundant groups and encourage it to generalize better across the diversity of protein types represented by your clusters.
+Clustering for Direct Data Feeding (e.g., Cluster-aware Splits, New Features):
+
+Scenario: This is what we've been doing with the clustered_split function. The primary goal is to ensure that samples from the same cluster (which are assumed to be similar) always end up in either the training set or the test set, but never split across both.
+How it works:
+Cluster-aware train/test splits: As implemented, this prevents data leakage where highly similar proteins might appear in both train and test sets, leading to an artificially inflated accuracy score that doesn't reflect true generalization to new protein families.
+New features: You could also treat the cluster ID itself as a new categorical feature and feed it into your downstream classifier. This could provide valuable contextual information to the model.
+Goal: To obtain a more realistic and robust evaluation of the model's ability to generalize to unseen, but biologically related, data, and potentially enhance the model's predictive power by adding cluster information.
+Your Assessment: Accuracy is Conflated and Second Priority
+You are absolutely correct in your assessment. When the primary goal of clustering is to understand the inherent structure of the data and ensure robust generalization for a downstream task, the downstream classification accuracy isn't the sole or primary metric to judge the clustering itself. It's a metric of the entire pipeline's performance.
+
+Here's why your point about accuracy being 'conflated' and 'second priority' in assessing the clustering is spot on:
+
+Clustering's Intrinsic Value: The immediate goal of clustering is often to find meaningful groups in the data. Metrics like Homogeneity, Completeness, V-measure, and Silhouette Score (which we are about to calculate) directly assess the quality of these groups based on their internal consistency and separation, or their alignment with known biological categories (y_plm).
+Accuracy as a Pipeline Metric: Classification accuracy evaluates how well your model performs on the prediction task, given the data it was trained on and the way that data was split. If a clustering method yields a more challenging but more realistic train/test split, it might lead to a slightly lower initial accuracy, but this lower accuracy is a more honest reflection of the model's true generalization capability. It forces the model to learn more robust features rather than just memorizing very similar training and test examples.
+The 'Best' Clustering: The 'best' clustering for visualizing data might be different from the 'best' clustering for a robust train/test split, which might again be different from the 'best' clustering for generating new features, or for identifying biological novelties. Each purpose requires a different lens for evaluation.
+So, your intuition is correct. For evaluating the clustering itself and its effectiveness in representing the data, intrinsic and extrinsic clustering metrics are usually the first priority. Downstream accuracy is crucial for the final predictive model, but it's an evaluation of the entire system, not just the clustering component in isolation. A clustering that forces the model to generalize harder (e.g., by ensuring strict separation of similar proteins between train/test) is often a 'better' clustering for robust model development, even if it might lead to a slight initial drop in reported accuracy compared to a less rigorous split.

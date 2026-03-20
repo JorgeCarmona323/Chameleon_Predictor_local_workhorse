@@ -189,3 +189,43 @@ The linker as a moderator variable gets incorporated by fitting the model separa
 What you extract and what it means
 The computational output before the screen gives you predicted chameleonic potential for every compound in your library, per-residue decomposition identifying which positions drive switching, and linker-stratified building block rankings. The screen gives you binary permeability calls at library scale validating and refining those predictions. The resynthesis gives you quantitative PC50 values for model training. The integrated model gives you building block main effects, position-specific contributions, and linker modulation coefficients that together constitute a quantitative structure-permeability map of your chemical space.
 The deliverable for the next library design cycle is concrete and actionable: for each linker scaffold, a ranked list of building block combinations at positions 1-4 predicted to maximize chameleonic switching efficiency, with confidence intervals derived from how consistently those predictions held up against experimental PC50 values. That's the translation from descriptive science into predictive design, and it's what makes this project more than a characterization study.
+
+The core pipeline for each stage would be:
+SMILES → RDKit ETKDGv3 conformer generation → MMFF94s minimization → 
+Boltzmann-weighted PSA calculation → per-residue PSA attribution → 
+ΔPSA computation → output feature matrix
+The specific implementation at each stage:
+For X1 through X1X2X3X4 (linear structures), you run ETKDGv3 without the macrocycle flag since these are open chain. This is fast and the conformer ensemble is well-behaved for linear peptides. You compute PSA for each conformer, Boltzmann weight using MMFF94s energies, and take the weighted mean as your PSA estimate. No min/max selection — straight Boltzmann average as established from the Yu et al. findings.
+For X1X2X3X4X5 (macrocycles), you switch to ETKDGv3 with the macrocycle torsion flag enabled. This is where the computational cost increases but with 1.9 million SMILES you want to parallelize across your 14 linker classes — each linker class is an independent batch so you can run them simultaneously if you have access to a cluster or even just a multi-core workstation.
+The per-residue attribution at each stage is the key novel computation. In RDKit you can get atom-level SASA contributions from rdFreeSASA, and every atom in your SMILES has a defined residue membership from your enumeration scheme. So for each conformer you sum the polar SASA contributions by residue, Boltzmann weight across conformers, and output ΔPSA_pos1 through ΔPSA_posN for however many positions exist at that enumeration stage.
+What this gives you as output at each stage is a feature matrix where rows are compounds and columns are:
+
+System-level ΔPSA (Boltzmann weighted, SASA normalized)
+Per-residue ΔPSA for each position present at that stage
+Building block identity at each position (categorical)
+Standard 2D descriptors as controls
+MW, HBD, TPSA for the two-regime classifier
+
+The sequential stage outputs then let you compute the ΔPSA increment for each building block addition:
+ΔPSA_increment_pos2 = ΔPSA(X1X2) - ΔPSA(X1)
+ΔPSA_increment_pos3 = ΔPSA(X1X2X3) - ΔPSA(X1X2)
+ΔPSA_increment_pos4 = ΔPSA(X1X2X3X4) - ΔPSA(X1X2X3)
+ΔPSA_increment_linker = ΔPSA(X1X2X3X4X5) - ΔPSA(X1X2X3X4)
+Each increment is directly interpretable as the marginal chameleonic contribution of adding that building block at that position in that sequence context. Averaged across all compounds containing building block X at position 2, this gives you the mean marginal ΔPSA contribution of that building block at that position — which is your empirical main effect estimate from computation rather than from experimental data.
+The linker increment is particularly powerful because it's computed against the same linear precursor for all 14 linkers. So for any given X1X2X3X4 combination you get 14 ΔPSA increment values, one per linker, directly comparable because they share the identical amino acid sequence. That's a clean computational experiment isolating linker geometry effects that requires no experimental data at all.
+For practical implementation the whole thing can be written as a fairly compact Python script using RDKit, numpy, and pandas. The pseudocode structure is:
+pythonfor stage in [X1, X1X2, X1X2X3, X1X2X3X4, X1X2X3X4X5]:
+    load SMILES file for stage
+    for each SMILES:
+        generate conformers (ETKDGv3, macrocycle flag if stage==5)
+        minimize with MMFF94s
+        compute per-conformer atom-level SASA
+        attribute SASA to residues
+        Boltzmann weight across conformers
+        compute system ΔPSA and per-residue ΔPSA
+    output feature matrix for stage
+
+compute increment matrices between consecutive stages
+fit main effects model at each stage
+compare building block rankings across stages and linker classes
+The output of this entire computational pipeline before you run a single assay is a ranked prediction of chameleonic potential for every compound in your 1.9 million member library, decomposed by position and linker, with building block main effects estimated purely from computation. That's your prior going into the screen and your framework for interpreting the experimental data when it comes back.

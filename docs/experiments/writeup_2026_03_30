@@ -1,0 +1,92 @@
+1. Typical Evaluation Metrics for Clustering
+Clustering evaluation metrics fall into two main categories:
+
+Extrinsic Metrics (require ground truth labels): These compare the clustering results to a known set of labels (e.g., your y_plm localization labels). They tell you how well your clusters align with some external information.
+
+Homogeneity: Measures whether each cluster contains only members of a single class. A value of 1.0 means each cluster is perfectly pure.
+Completeness: Measures whether all members of a given class are assigned to the same cluster. A value of 1.0 means all instances of a class are grouped together.
+V-measure: The harmonic mean of homogeneity and completeness, providing a single score that balances both. It's often preferred because it requires both conditions to be met for a high score.
+Adjusted Rand Index (ARI): Measures the similarity between two clusterings, adjusting for chance. A value of 1.0 indicates perfect agreement, 0.0 indicates random assignment.
+Adjusted Mutual Information (AMI): Similar to ARI, it measures the mutual information between two clusterings, adjusted for chance. High values indicate better agreement.
+Intrinsic Metrics (do NOT require ground truth labels): These evaluate the quality of the clustering based solely on the data and the resulting clusters themselves. They often assess how compact and well-separated the clusters are.
+
+Silhouette Score: For each sample, it measures how similar it is to its own cluster compared to other clusters. The score ranges from -1 to 1, where a high value indicates well-separated clusters, and a low value indicates overlapping or poorly formed clusters. A score around 0 means overlapping clusters, and negative values suggest samples might be assigned to the wrong cluster.
+Davies-Bouldin Index: Lower values indicate better clustering, where clusters are well-separated and compact.
+Calinski-Harabasz Index: Higher values indicate better clustering. It's calculated as the ratio of between-cluster dispersion to within-cluster dispersion.
+2. Should Evaluation be Run on High-Dimensional Data to Guide Algorithm Choice?
+Ideally, yes, for assessing the inherent structure of the data, clustering should be performed and evaluated on the original high-dimensional feature space (X_plm). Dimensionality reduction techniques like UMAP inevitably lose some information, and the clusters formed in the reduced space might not perfectly reflect the clusters that exist in the original space. If your goal is to truly discover the underlying groups in your complex, high-dimensional data, you generally want to cluster in that space.
+
+However, there are practical considerations:
+
+Computational Cost: Clustering in very high dimensions can be computationally expensive for some algorithms.
+Curse of Dimensionality: In extremely high dimensions, distance metrics can become less meaningful, making clustering harder.
+Noise Reduction: Sometimes, dimensionality reduction can help by filtering out noise and focusing on the most salient features, which can sometimes lead to
+
+so do i need the descriptor for each linear peptide or just the final product ot decompose for per residue mapping?
+
+11:33 AM
+You need both, and the sequential enumeration files you already have are exactly what make this tractable.
+
+Here's the logic. The per-residue ΔPSA decomposition of the final macrocycle tells you how much each position contributes to chameleonic switching in the context of the closed ring — but it can't tell you whether that contribution is intrinsic to the building block or emergent from the ring closure geometry imposed by the linker. To separate those two things you need the linear stage data.
+
+The linear peptide ΔPSA at each enumeration stage gives you the intrinsic building block contribution in an open chain context — no ring strain, no cyclization constraint, just the building block's own conformational switching potential in sequence context. The difference between the linear stage ΔPSA and the macrocyclic ΔPSA is the linker's geometric contribution — how much the ring closure amplifies or suppresses what the building block was already doing.
+
+So the full decomposition looks like this for each compound:
+
+The X1 through X1X2X3X4 stages give you the incremental intrinsic building block contributions as each residue is added to the growing chain. The X1X2X3X4X5 macrocycle gives you the total system ΔPSA and the per-residue decomposition in the closed ring context. The difference between the sum of linear increments and the macrocyclic total is your linker geometric contribution — the non-additive ring closure effect.
+
+For the Zhang et al. P(permeable) analysis you only need the final macrocycle permeability readout from the screen. But for the mechanistic per-residue story that makes your work novel — explaining why certain building blocks at certain positions drive permeability — you need the linear stage descriptors to separate intrinsic from emergent contributions. The linear stages are your ground truth for what each building block brings to the table before the linker reshapes everything.
+
+but if the ring closure is dramatic do we need it?
+
+11:34 AM
+That's a sharp question and the honest answer is: you don't know until you run the validation experiment, and the answer will tell you something scientifically important regardless of which way it goes.
+
+If ring closure dramatically reshapes ΔPSA — meaning the macrocyclic ΔPSA is substantially different from what you'd predict by summing the linear increments — that finding is itself the result. It means the linker geometry is doing real conformational work and the intrinsic building block contributions are a poor predictor of macrocyclic permeability. In that case the linear stage descriptors become less useful as predictors but more important as mechanistic reference points — they let you quantify exactly how much each linker amplifies or suppresses the building block contributions, which is your linker design principle for the next library.
+
+If ring closure is modest — meaning the macrocyclic ΔPSA tracks reasonably well with the sum of linear increments — then the linear stages are validating that your per-residue decomposition of the macrocycle is trustworthy, because the contributions are approximately additive and position-specific.
+
+But here's the practical point: the linear stage SMILES files you already have cost you almost nothing computationally to process through the same ETKDGv3 Boltzmann pipeline. You're running the macrocycle stage anyway. Adding the linear stages is maybe 20% more compute and a few extra lines of code to handle the open chain flag in ETKDGv3. The marginal cost of having the linear data is tiny relative to the scientific value of knowing whether ring closure is dramatic or not.
+
+So the question isn't really whether you need it — it's whether you can afford not to have it when a reviewer asks.
+
+so if the linker makes it huge we dont need linear peptide or monomer bb descriptors?
+
+11:35 AM
+Correct — if the linker effect dominates, the linear and monomer descriptors lose predictive value for permeability because whatever the building blocks contribute individually gets swamped by the ring closure geometry. In that case your P(permeable) model is essentially a linker-first model and the actionable design rule becomes: pick your linker based on which ones produce high macrocyclic ΔPSA, then diversify building blocks freely for binding optimization since their intrinsic chameleonic contributions don't matter much anyway.
+
+But you still want to compute them once for one specific reason — to confirm that the linker effect is actually dominant rather than assuming it. If you skip the linear stages and go straight to macrocycle descriptors, you can observe that linker identity strongly predicts permeability but you can't prove it's because of ring closure geometry rather than because certain linkers happen to be paired with permeability-promoting building block combinations in your library by chance. The linear stage data is what lets you make that causal claim cleanly.
+
+Run it once, establish whether the linear contributions are predictive or not, then you have the answer. If linker dominates you report that finding — which is itself a strong and publishable design principle — and you never need to think about monomer descriptors again for permeability prediction in this scaffold. If linear contributions matter you have the data to show it.
+
+Either outcome is a clean story. The linear stage computation is your one experiment that tells you which story you're in.
+
+so basically my pi is saying before we go to this endevour to try it on the combined cremp and delta psa dataset and picka particuar structure that has enough edges to see if I can do the per residue deletions and mutations before we move to the entire library scale
+
+11:58 AM
+That's excellent scientific advice and exactly the right way to validate the methodology before committing to 1.9 million compounds.
+
+What your PI is essentially saying is: prove the per-residue decomposition works as a predictive tool on a dataset where you already have ground truth, before you trust it to guide decisions on your novel library where you have no ground truth yet.
+
+The CREMP-CycPeptMPDB dataset is perfect for this because it gives you three things simultaneously. You have high quality CREST conformer ensembles already computed so you can calculate per-residue ΔPSA without needing to run any new conformer generation. You have experimental permeability labels from CycPeptMPDB for the same compounds so you can validate whether per-residue ΔPSA predicts permeability. And you have enough structural diversity in the 3,258 compounds to find a scaffold with sufficient positional coverage to do the deletion and mutation analysis your PI is describing.
+
+The specific experiment is to pick one scaffold family within the CREMP-CycPeptMPDB set — ideally a hexapeptide or heptapeptide scaffold where multiple building block variants exist at each position — and ask whether per-residue ΔPSA at each position predicts the permeability difference between variants. Computationally this means taking a permeable compound, computing its per-residue ΔPSA decomposition, identifying which position has the highest contributing residue, then finding compounds in the dataset where that position is mutated to a lower-ΔPSA building block and confirming that permeability drops as predicted. Then doing the inverse — finding impermeable compounds where per-residue ΔPSA is low at a specific position, finding variants where that position is mutated to a higher-ΔPSA building block, and confirming permeability improves.
+
+If that validation holds up on the CREMP dataset the methodology is credible and you have a published benchmark to cite when you apply it to your library. If it doesn't hold up you learn something important about where the per-residue approach breaks down before you've invested in the full library computation.
+
+The practical first step is downloading the CREMP-CycPeptMPDB data from zenodo.org/doi/10.5281/zenodo.10798261, identifying which scaffold families have enough positional coverage for the mutation analysis, picking your test case, and computing per-residue ΔPSA from the existing CREST ensembles using rdFreeSASA with residue-level attribution. That's a focused, achievable validation experiment that directly answers your PI's question before you scale to anything larger.
+
+yea so I would basically need a scaffold that has alot of residues changing and see if the deltapsa 3d descriptors can predict the permeability changes
+
+12:00 PM
+Exactly. You need a scaffold where the backbone and linker are fixed and the building blocks at each position are varied across enough compounds that you can isolate the contribution of each position independently.
+
+The good news is CREMP-CycPeptMPDB was built from CycPeptMPDB which contains exactly this kind of data. The Furukawa dataset in particular has systematic SAR series where the same cyclic peptide scaffold is varied position by position — that's actually how Lokey's group generated much of their data, holding the scaffold fixed and walking substitutions around the ring to map position-specific permeability effects. Those series are precisely what you need.
+
+What you're looking for when you download the data is a scaffold family where you have something like at minimum 20-50 compounds sharing the same ring size and cyclization chemistry, with variation at 3 or more positions, and with permeability values that span the permeable/impermeable boundary rather than all clustering on one side. That last criterion is critical — if all variants of a scaffold are permeable you can't test whether per-residue ΔPSA predicts the permeability differences because there's nothing to discriminate.
+
+The ideal test case looks like this in practice. You find a hexapeptide scaffold where position 2 has 5 different building blocks represented across the dataset, position 4 has 8 different building blocks, and position 5 has 3 different building blocks, with the other positions fixed. You compute per-residue ΔPSA for all compounds in that family. You then ask whether the per-residue ΔPSA at position 2 rank orders the permeability of the position 2 variants correctly, independently of what's at positions 4 and 5. Then the same question for position 4 and position 5. If the rank ordering holds at each position independently that's your validation — per-residue ΔPSA is capturing a real position-specific signal.
+
+The Zhang et al. P(permeable) framework then maps directly onto this validation. For each building block variant at each position you compute P(permeable) from the experimental data and ask whether it correlates with mean per-residue ΔPSA at that position across all compounds containing that building block. If the correlation is strong you have exactly what you need to justify scaling to your library.
+
+The failure mode to watch for is if a position shows high per-residue ΔPSA but low P(permeable) — which would suggest that position's switching contribution is being suppressed by the ring geometry or by unfavorable interactions with neighboring positions in the macrocyclic context. That failure is itself informative because it tells you the per-residue decomposition needs the linker correction term to be reliable, which circles back to why your PI's validation experiment is the right gate before committing to the full library analysis.

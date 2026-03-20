@@ -229,3 +229,32 @@ compute increment matrices between consecutive stages
 fit main effects model at each stage
 compare building block rankings across stages and linker classes
 The output of this entire computational pipeline before you run a single assay is a ranked prediction of chameleonic potential for every compound in your 1.9 million member library, decomposed by position and linker, with building block main effects estimated purely from computation. That's your prior going into the screen and your framework for interpreting the experimental data when it comes back.
+
+You're right to push back on this — it's the central tension that's been running through this whole conversation and I want to be precise about it.
+ΔPSA is defined as the difference in PSA between two solvent environments — aqueous and nonpolar. So yes, you need two conformer populations representing those two states. The question is how you get them.
+The fundamental problem
+A vacuum ETKDGv3 ensemble gives you one pool of conformers with no solvent bias. Your current implementation takes the max PSA conformer as a proxy for the aqueous state and the min PSA conformer as a proxy for the nonpolar state. As your own paper establishes and the literature confirms, this is physically unjustified — you're using geometry to proxy for thermodynamics, and the vacuum ensemble doesn't weight conformers the way either solvent would.
+What you actually need
+Two Boltzmann-weighted mean PSA values from two distinct conformer populations:
+
+PSA_water = mean PSA weighted by aqueous-condition energies
+PSA_nonpolar = mean PSA weighted by nonpolar-condition energies
+ΔPSA = PSA_water - PSA_nonpolar
+
+The practical options open source at your scale
+For the nonpolar state, xTB/ALPB-CHCl3 is validated, fast, and open source. CREMP proves this works to ~1 Å against NMR. This is your best option for PSA_nonpolar at 1.9 million scale.
+For the aqueous state this is where everyone in the literature hits the same wall. Your options in order of increasing accuracy and computational cost are:
+ETKDGv3 vacuum max-PSA conformer — what you're doing now, physically unjustified but fast
+ETKDGv3 ensemble Boltzmann weighted with vacuum energies — better than min/max, still no solvent, but captures ensemble shape rather than single conformer
+xTB/ALPB-water optimization — same approach as CHCl3 but CREMP explicitly shows ALPB fails for water because it can't model hydrogen bond donors properly. This would be worse than vacuum for polar conformers.
+OpenMM GBSA-OBC at ε=80 — implicit water, captures some electrostatic solvation effects, better than vacuum but unvalidated for macrocyclic peptides specifically
+Explicit TIP3P MD — what Paper 1 uses, physically correct, completely intractable at 1.9 million scale
+The honest answer for your pipeline
+For the full 1.9 million compound pre-screen you cannot get a physically rigorous aqueous conformer population at scale with current open source tools. Nobody can — this is an open problem in the field and it's why CREMP only ran CHCl3, why Paper 1 is computationally expensive, and why your xTB negative control in your own paper showed near-zero ΔPSA from single structure optimization.
+What you can do is be explicit and principled about the approximation. The most defensible approach at scale is:
+PSA_nonpolar from xTB/ALPB-CHCl3 Boltzmann-weighted ensemble — physically grounded, literature validated
+PSA_water from ETKDGv3 vacuum Boltzmann-weighted ensemble — acknowledged approximation, capturing conformational diversity without solvent bias
+ΔPSA = PSA_vacuum_Boltzmann - PSA_xTB_CHCl3_Boltzmann
+This is better than your current implementation because the nonpolar state is now physics-based rather than heuristic, and both states use Boltzmann weighting rather than single conformer selection. It's not perfect because your aqueous state is still vacuum, but it's the best available approximation at 1.9 million scale and it's internally consistent.
+The validation experiment — which you run on your 15-compound reference set before committing the full library — is whether this approximation preserves the rank order of ΔPSA relative to either Paper 1's explicit solvent protocol or your own experimental PC50 values. If Spearman ρ is high, the vacuum Boltzmann approximation for the aqueous state is good enough for your pre-screen ranking purpose. If it's not, you have a problem that no current open source tool solves at your scale without heroic compute.
+The OpenMM GBSA-OBC step becomes your aqueous state upgrade for the post-screen validation set where you have 140-210 compounds — at that scale it's completely tractable and gives you the physically motivated two-dielectric contrast that approximates the full explicit solvent protocol at a fraction of the cost.

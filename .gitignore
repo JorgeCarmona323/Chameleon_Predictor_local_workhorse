@@ -47,3 +47,6 @@ figures/
 
 # Large conformer files
 conformer_descriptors_raw.csv
+
+# Dependencies (large binary files — store locally or on shared drive)
+dependencies/

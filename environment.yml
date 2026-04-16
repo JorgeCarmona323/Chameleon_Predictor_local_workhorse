@@ -1,7 +1,6 @@
 name: chameleon
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python=3.11
   # ── Core chemistry ────────────────────────────────────────────────────────
@@ -34,7 +33,7 @@ dependencies:
       # ML
       - tabpfn              # TabPFN — best model for small tabular datasets (PROTAC-TS)
       # Descriptors
-      - mordred             # 2D + 3D molecular descriptors
+      - mordredcommunity    # 2D + 3D molecular descriptors (maintained fork of mordred)
       # Graph clustering (UMAP kNN → Leiden communities)
       - leidenalg
       - igraph

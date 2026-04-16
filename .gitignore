@@ -34,6 +34,7 @@ venv/
 .DS_Store
 Thumbs.db
 *.Zone.Identifier
+*:Zone.Identifier
 
 # Editor
 .vscode/
@@ -50,3 +51,10 @@ conformer_descriptors_raw.csv
 
 # Dependencies (large binary files — store locally or on shared drive)
 dependencies/
+
+# Literature PDFs and lab docs (not code — store locally)
+literature/
+*.pdf
+
+# Windows Office lock files
+~$*

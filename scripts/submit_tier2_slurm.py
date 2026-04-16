@@ -118,7 +118,6 @@ def build_merge_script(job_ids: list[int], repo_root: str) -> str:
         #!/bin/bash
         #SBATCH --job-name=crest_merge
         #SBATCH --partition={PARTITION}
-        #SBATCH --account={ACCOUNT}
         #SBATCH --cpus-per-task=1
         #SBATCH --mem=4G
         #SBATCH --time=00:10:00

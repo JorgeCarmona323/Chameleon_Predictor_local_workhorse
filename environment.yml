@@ -1,35 +1,46 @@
-name: chem269_cycpep
+name: chameleon
 channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.10
-  # Core chemistry
+  - python=3.11
+  # ── Core chemistry ────────────────────────────────────────────────────────
   - rdkit>=2023.9
   - numpy>=1.24
   - pandas>=2.0
   - scipy>=1.10
   - scikit-learn>=1.3
-  # Visualization
+  # ── Conformer sampling (Tier-2 CREST pipeline) ───────────────────────────
+  - crest>=3.0          # iMTD-GC conformer sampling
+  - xtb>=6.6            # GFN2-xTB semi-empirical engine + ALPB solvation
+  # ── Visualization ─────────────────────────────────────────────────────────
   - matplotlib>=3.7
   - seaborn>=0.12
-  # Dimensionality reduction / clustering
+  # ── Chemical space / clustering ───────────────────────────────────────────
   - umap-learn>=0.5.6
   - hdbscan>=0.8.33
-  # Jupyter
+  # ── ML models (feature benchmark) ────────────────────────────────────────
+  - lightgbm>=4.0
+  # ── Utilities ─────────────────────────────────────────────────────────────
   - jupyter
   - ipykernel
   - ipywidgets
   - tqdm
-  # Parallelism
   - joblib
   - pip
   - pip:
-      # Graph clustering for UMAP kNN graph
+      # Fingerprints
+      - mhfp                # MAPC / MinHashed Atom-Pair fingerprint (chirality-aware)
+      # ML
+      - tabpfn              # TabPFN — best model for small tabular datasets (PROTAC-TS)
+      # Descriptors
+      - mordred             # 2D + 3D molecular descriptors
+      # Graph clustering (UMAP kNN → Leiden communities)
       - leidenalg
       - igraph
-      # Mordred 3D descriptors (WHIM, autocorrelation)
-      - mordred
-      # Notebook conversion
+      # Document export
+      - python-docx
+      - python-pptx
+      # Notebook utilities
       - nbformat
       - nbconvert

@@ -125,11 +125,14 @@ def process_pickle(name: str, obj: dict, max_confs: int = 100) -> dict:
     psas_valid = psas[valid_mask]
     valid_indices = np.where(valid_mask)[0]
 
-    aq_idx  = valid_indices[np.argmax(psas_valid)]   # max-PSA conformer
-    mem_idx = valid_indices[np.argmin(psas_valid)]   # min-PSA conformer
+    aq_psas_idx  = valid_indices[np.argmax(psas_valid)]   # index into psas[] / sample_ids[]
+    mem_psas_idx = valid_indices[np.argmin(psas_valid)]
 
-    aq_psa  = float(psas[aq_idx])
-    mem_psa = float(psas[mem_idx])
+    aq_conf_id  = sample_ids[int(aq_psas_idx)]   # actual RDKit conformer ID
+    mem_conf_id = sample_ids[int(mem_psas_idx)]
+
+    aq_psa  = float(psas[aq_psas_idx])
+    mem_psa = float(psas[mem_psas_idx])
 
     # ── Boltzmann-weighted PSA (sampled subset only) ──────────────────────────
     bw_psa = np.nan
@@ -141,9 +144,13 @@ def process_pickle(name: str, obj: dict, max_confs: int = 100) -> dict:
         if w_sum > 0:
             bw_psa = float(np.sum(w_subset * psas_valid) / w_sum)
 
-    # ── Normalized ΔPSA (Yu et al. 2026) — ΔPSA / SASA_total ─────────────────
-    total_aq  = _total_sasa(mol, int(aq_idx))
-    total_mem = _total_sasa(mol, int(mem_idx))
+    # ── Normalized ΔPSA (Yu et al. 2026) — ΔPSA / SASA_aq_total ─────────────
+    # Denominator is total SASA of the aq conformer (Yu 2026 definition).
+    # Note: bw_psa3d is computed over ~100 sampled conformers (59% of total BW
+    # weight for typical compounds). Sampling systematically overestimates
+    # bw_psa3d by ~3-4 Å² relative to the full ensemble, because the tail of
+    # medium-energy conformers is underrepresented. Accepted approximation.
+    total_aq  = _total_sasa(mol, aq_conf_id)
     norm_delta_psa = np.nan
     if not np.isnan(total_aq) and total_aq > 0:
         norm_delta_psa = round((aq_psa - mem_psa) / total_aq, 6)

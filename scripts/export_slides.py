@@ -298,6 +298,64 @@ def build_pptx(outdir: Path):
                     "Cross-source label noise inverts the size-permeability signal.",
         )
 
+    # Slide 7 — AUC bar: Furukawa + Chugai 1,566 (all sizes)
+    auc_1566 = outdir / "figures" / "auc_roc_bar_2016_2013_1566.png"
+    if auc_1566.exists():
+        add_image_slide(
+            prs, "AUC-ROC — Furukawa + Chugai (n=1,566, all sizes)",
+            auc_1566,
+            caption="On clean single-protocol sources, ΔPSA AUC=0.69 and psa3d_std AUC=0.69 — "
+                    "matching NumHDonors (0.69) and outperforming MolLogP (0.68). "
+                    "3D conformational descriptors are competitive with 2D baselines. "
+                    "Rg and mem_hb_count emerge as new predictors for the lipophilic regime.",
+        )
+
+    # Slide 8 — AUC bar: Furukawa + Chugai ≥9 residues (chameleonic regime)
+    auc_829 = outdir / "figures" / "auc_roc_bar_2016_2013_res9plus_829.png"
+    if auc_829.exists():
+        add_image_slide(
+            prs, "AUC-ROC — ≥9 Residues Only (n=829, chameleonic regime)",
+            auc_829,
+            caption="Applying the ≥9 residue filter: MolLogP AUC=0.90, MolWt=0.87. "
+                    "Rg (membrane conformer) AUC=0.82 — strongest 3D signal yet, above TPSA (0.77). "
+                    "ΔPSA falls to 0.44 but norm_delta_psa and NPR1/NPR2 emerge. "
+                    "Large chameleonic macrolides: compact 3D shape drives permeability, not switching magnitude alone.",
+        )
+
+    # Slide 9 — CREMP overlap AUC bar
+    auc_cremp = outdir / "figures" / "auc_roc_bar_cremp_overlap_2416.png"
+    if auc_cremp.exists():
+        add_image_slide(
+            prs, "AUC-ROC — CREMP × CycPeptMPDB Overlap (n=2,416, 6–7 mers)",
+            auc_cremp,
+            caption="aq_psa3d AUC=0.667 — strongest 3D descriptor, just below MolLogP (0.684). "
+                    "bw_psa3d AUC=0.607 (lipophilicity proxy). "
+                    "delta_psa3d AUC=0.588 — above chance but weak; 6–7 mers are not switching enough for ΔPSA to dominate. "
+                    "pop_lowest_pct AUC=0.520 — conformational rigidity carries no signal in this size regime.",
+        )
+
+    # Slide 10 — CREMP structural bias
+    cremp_bias = outdir / "figures" / "cremp_structural_bias.png"
+    if cremp_bias.exists():
+        add_image_slide(
+            prs, "CREMP Benchmark — Structural Bias: Wrong Size Regime",
+            cremp_bias,
+            caption="CREMP overlap (n=2,435) peaks at 6–7 mers — entirely below the ≥9 residue chameleonic threshold (Yu 2026). "
+                    "Non-overlap CycPeptMPDB compounds peak at 10 mers, the correct regime. "
+                    "ΔPSA cannot be expected to predict permeability on this subset.",
+        )
+
+    # Slide 11 — CREMP ROC + two-population summary
+    cremp_roc = outdir / "figures" / "cremp_roc_comparison.png"
+    if cremp_roc.exists():
+        add_image_slide(
+            prs, "CREMP Benchmark — ΔPSA at Chance; Lipophilicity Signal Identified",
+            cremp_roc,
+            caption="Vacuum ΔPSA AUC=0.499, Hybrid ΔPSA (CREMP CHCl₃ mem) AUC=0.454 — both at chance on 6–7 mer overlap. "
+                    "bw_psa3d (inverted) AUC=0.607: lower CHCl₃ polar SASA predicts permeability via lipophilicity, not chameleonic switching. "
+                    "Two distinct permeability mechanisms confirmed: chameleonic (≥9 mer) vs. lipophilic passive diffusion (<9 mer).",
+        )
+
     out_path = outdir / "Chameleon_Predictor_slides.pptx"
     prs.save(out_path)
     print(f"PowerPoint saved: {out_path}")

@@ -665,7 +665,25 @@ def plot_results(results: list[dict], outdir: Path) -> None:
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool) -> None:
+def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
+        compound_idx: int | None = None, n_threads: int | None = None) -> None:
+    """
+    Run Tier-2 CREST validation.
+
+    Parallelisation mode (recommended by computational collaborator):
+      Submit one job per compound using --compound 0..4 and --threads N.
+      Each job writes results/tier2_crest_compound_{idx}.csv independently.
+      After all 5 jobs finish, run --merge to combine into tier2_crest_table.csv.
+
+    Example job array (SLURM):
+      for i in 0 1 2 3 4; do
+        sbatch --ntasks=8 run_crest.sh --compound $i --threads 8
+      done
+      python scripts/tier2_crest.py --merge --outdir results
+
+    Single-compound local test:
+      python scripts/tier2_crest.py --compound 0 --threads 4 --dry-run
+    """
     (outdir / "figures").mkdir(parents=True, exist_ok=True)
     work_base = outdir / "crest_runs"
     work_base.mkdir(exist_ok=True)
@@ -681,18 +699,85 @@ def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool) -> None:
             else:
                 print(f"WARNING: No SMILES found for {cpd['name']} (ID={cid})")
 
-    results = []
-    for cpd in REFERENCE_COMPOUNDS:
-        r = process_compound(cpd, work_base, max_confs, dry_run)
-        results.append(r)
+    # Override CREST thread count if specified — use a module-level patch
+    # (cannot shadow `run_crest` as a local variable; Python would treat
+    #  the name as local throughout the function and fail before the assignment)
+    if n_threads is not None:
+        _nt = n_threads  # capture for closure
 
-    # Save table
-    table_rows = [{k: v for k, v in r.items()} for r in results]
-    table = pd.DataFrame(table_rows)
+        def _threaded_run_crest(xyz_path, work_dir, solvent, max_confs=200, charge=0):
+            work_dir.mkdir(parents=True, exist_ok=True)
+            cmd = [
+                "crest", str(xyz_path),
+                "--alpb", solvent,
+                "--T", str(_nt),
+                "--quick",
+                "--keepdir",
+                "--mquick",
+            ]
+            if charge != 0:
+                cmd += ["--chrg", str(charge)]
+            print(f"      Running: {' '.join(cmd)}")
+            result = subprocess.run(
+                cmd, cwd=work_dir,
+                capture_output=True, text=True, timeout=7200,
+            )
+            ensemble = work_dir / "crest_conformers.xyz"
+            if ensemble.exists() and ensemble.stat().st_size > 0:
+                return ensemble
+            else:
+                print(f"      CREST stderr: {result.stderr[-500:]}")
+                return None
+
+        # Monkey-patch the module-level function so process_compound picks it up
+        import sys as _sys
+        _this = _sys.modules[__name__]
+        _orig_run_crest = _this.run_crest
+        _this.run_crest = _threaded_run_crest
+
+    # Select compounds to run
+    if compound_idx is not None:
+        if compound_idx < 0 or compound_idx >= len(REFERENCE_COMPOUNDS):
+            raise ValueError(
+                f"--compound must be 0–{len(REFERENCE_COMPOUNDS)-1}, "
+                f"got {compound_idx}. Compounds: "
+                + ", ".join(f"{i}={c['short']}"
+                            for i, c in enumerate(REFERENCE_COMPOUNDS))
+            )
+        compounds_to_run = [REFERENCE_COMPOUNDS[compound_idx]]
+        print(f"\n[Parallel mode] Running compound {compound_idx}: "
+              f"{compounds_to_run[0]['name']}")
+    else:
+        compounds_to_run = REFERENCE_COMPOUNDS
+
+    results = []
+    try:
+        for cpd in compounds_to_run:
+            r = process_compound(cpd, work_base, max_confs, dry_run)
+            results.append(r)
+    finally:
+        # Restore original run_crest if it was monkey-patched
+        if n_threads is not None:
+            _this.run_crest = _orig_run_crest
+
+    # Save per-compound CSV (parallel-safe — no file collision)
+    if compound_idx is not None:
+        short = compounds_to_run[0]["short"]
+        out_csv = outdir / f"tier2_crest_compound_{compound_idx}_{short}.csv"
+        pd.DataFrame(results).to_csv(out_csv, index=False)
+        print(f"\nSaved: {out_csv}")
+        print(f"Run --merge after all 5 compounds complete to combine results.")
+        return
+
+    # Sequential mode: save combined table and plot immediately
+    _save_and_plot(results, outdir)
+
+
+def _save_and_plot(results: list[dict], outdir: Path) -> None:
+    table = pd.DataFrame([{k: v for k, v in r.items()} for r in results])
     out_csv = outdir / "tier2_crest_table.csv"
     table.to_csv(out_csv, index=False)
 
-    # Print summary
     print(f"\n{'='*60}")
     print("CREST Tier-2 Summary")
     print(f"{'='*60}")
@@ -702,21 +787,77 @@ def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool) -> None:
     avail = [c for c in disp_cols if c in table.columns]
     print(table[avail].to_string(index=False))
     print(f"\nSaved: {out_csv}")
-
     plot_results(results, outdir)
 
 
+def merge_parallel_results(outdir: Path) -> None:
+    """
+    Combine per-compound CSVs written by parallel jobs into tier2_crest_table.csv.
+    Run after all --compound jobs complete.
+    """
+    import glob
+    pattern = str(outdir / "tier2_crest_compound_*.csv")
+    files = sorted(glob.glob(pattern))
+    if not files:
+        print(f"No per-compound CSVs found matching: {pattern}")
+        return
+    print(f"Merging {len(files)} per-compound files...")
+    dfs = [pd.read_csv(f) for f in files]
+    combined = pd.concat(dfs, ignore_index=True)
+    # Restore original compound order
+    order = {c["name"]: i for i, c in enumerate(REFERENCE_COMPOUNDS)}
+    combined["_order"] = combined["compound"].map(order)
+    combined = combined.sort_values("_order").drop(columns="_order").reset_index(drop=True)
+    out_csv = outdir / "tier2_crest_table.csv"
+    combined.to_csv(out_csv, index=False)
+    print(f"Merged {len(combined)} compounds → {out_csv}")
+    plot_results(combined.to_dict("records"), outdir)
+
+
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Tier-2 CREST+ALPB validation")
+    parser = argparse.ArgumentParser(
+        description="Tier-2 CREST+ALPB validation",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Parallelisation (one job per compound):
+  python tier2_crest.py --compound 0 --threads 8   # HexPep
+  python tier2_crest.py --compound 1 --threads 8   # 1NMe3
+  python tier2_crest.py --compound 2 --threads 8   # CsA
+  python tier2_crest.py --compound 3 --threads 8   # DP-172
+  python tier2_crest.py --compound 4 --threads 8   # PSLYF
+
+  After all 5 finish:
+  python tier2_crest.py --merge
+
+Compound index reference:
+  0 = HexPep   (impermeable, 6-mer)
+  1 = 1NMe3    (permeable,   6-mer, N-methylated)
+  2 = CsA      (permeable,  11-mer, chameleonic)
+  3 = DP-172   (permeable,   CHUGAI)
+  4 = PSLYF    (impermeable, HBD=8)
+        """
+    )
     parser.add_argument("--matrix",    "-m", default="results/feature_matrix.csv")
-    parser.add_argument("--outdir",    "-o", default="results")
+    parser.add_argument("--outdir",    "-o", default="results", type=Path)
     parser.add_argument("--max-confs", "-c", type=int, default=200)
     parser.add_argument("--dry-run",   action="store_true",
                         help="Skip CREST, use placeholder values for testing")
+    parser.add_argument("--compound",  type=int, default=None,
+                        metavar="IDX",
+                        help="Run only compound IDX (0-4). For parallel job submission.")
+    parser.add_argument("--threads",   type=int, default=None,
+                        metavar="N",
+                        help="CREST --T threads per job. Default: all available cores.")
+    parser.add_argument("--merge",     action="store_true",
+                        help="Merge per-compound CSVs after parallel jobs complete.")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.matrix, Path(args.outdir),
-        max_confs=args.max_confs, dry_run=args.dry_run)
+    if args.merge:
+        merge_parallel_results(Path(args.outdir))
+    else:
+        run(args.matrix, Path(args.outdir),
+            max_confs=args.max_confs, dry_run=args.dry_run,
+            compound_idx=args.compound, n_threads=args.threads)

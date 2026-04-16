@@ -1,12 +1,76 @@
 # Findings and Methods Log
 ## CHEM 269 Final Project — The Chameleon Traverse
-**Jorge Carmona | Started: 2026-03-15 | Last updated: 2026-03-17**
+**Jorge Carmona | Started: 2026-03-15 | Last updated: 2026-04-09**
 
 ---
 
 ## Purpose
 
 This document is the audit trail for the project. It records methodological decisions, parameter choices, negative results, and findings in the order they happened — the lab notebook behind the deliverable notebook.
+
+---
+
+## 2026-04-09 — NEXT SESSION: Feature Benchmark (Run ASAP)
+
+**Context:** This is the gating experiment before any further compute or model decisions. Full design in `docs/experiments/2026-04-09_feature_benchmark_design.md`.
+
+### Step 1 — Install missing packages
+```bash
+pip install tabpfn mhfp lightgbm
+```
+Then add to `environment.yml` under pip dependencies.
+
+### Step 2 — Write the benchmark script
+Create `scripts/feature_benchmark.py`:
+- Load SMILES + permeability labels from `results/feature_matrix_cremp_overlap.csv` (n=2,416, has CREST CHCl3 descriptors already)
+- Generate F1–F6 from SMILES:
+  - F1: Morgan bit-based (r=2, 2048-dim) — RDKit
+  - F2: Morgan count-based (r=2, 500-dim) — RDKit
+  - F3: Morgan count-based (r=2, 2048-dim) — RDKit
+  - F4: MAPC (2048-dim) — `mhfp` library
+  - F5: Mordred 2D only — `mordred`
+  - F6: Mordred 2D+3D from single ETKDG conformer — RDKit + `mordred`
+- F7: CREST CHCl3 descriptors already in the CSV (`aq_psa3d`, `mem_psa3d`, `delta_psa3d`, `norm_delta_psa`, `bw_psa3d`, `ensemble_energy`, `unique_confs`)
+- Models: TabPFN, LightGBM, RandomForest (baseline)
+- Same stratified CV splits across all feature sets (fix random seed)
+- Metrics: R², Spearman ρ, AUC-ROC
+- Output: results table as `results/feature_benchmark_results.csv`
+
+### Step 3 — Run it
+```bash
+python scripts/feature_benchmark.py
+```
+
+### Step 4 — Interpret and decide
+- If CREST >> ETKDG 3D: aqueous CREST compute is high priority
+- If CREST ≈ ETKDG 3D: deprioritize more simulation, focus on model
+- If MAPC >> Morgan: keep current FP approach
+- If Morgan wins: switch to count-based Morgan (simpler, faster)
+
+### F8 (aqueous CREST) — add once runs complete
+Re-run benchmark with aqueous CREST descriptors as an additional feature set.
+
+---
+
+## 2026-04-09 — Feature Generation Benchmark Design (Decision-Critical)
+
+Literature review of PROTAC-TS (Murakami et al., *JACS Au* 2026) and CREMP (Grambow et al., *Scientific Data* 2024) raised a critical question for the project: does expensive CREST conformer sampling actually outperform cheap RDKit 3D embeddings for permeability prediction? PROTAC-TS achieved R²=0.710 with only 500-dim count-based Morgan + TabPFN on 43 PROTACs — no conformer ensemble.
+
+**Full benchmark design in:** `docs/experiments/2026-04-09_feature_benchmark_design.md`
+
+**Summary of planned ablation (8 feature sets × 3 models, same CV splits):**
+- F1–F3: Morgan bit/count at 500 and 2048 dim (PROTAC-TS style)
+- F4: MAPC (current pipeline)
+- F5–F6: Mordred 2D-only and 2D+3D from single ETKDG conformer
+- F7: CREST CHCl3 ensemble descriptors (done)
+- F8: CREST aqueous ensemble descriptors (pending — compute now available)
+
+**Key decisions this answers:**
+1. MAPC vs. Morgan — does chirality-aware atom-pair FP beat circular for macrocycles?
+2. ETKDG 3D vs. CREST 3D — is the expensive simulation worth it?
+3. CHCl3 vs. aqueous CREST — does solvent matter for prediction?
+
+Also noted: PROTAC-TS uses count-based Morgan (beats bit-based); TabPFN won across all feature sets; 3D Mordred added ~2-3% R² even on n=43.
 
 ---
 
@@ -237,6 +301,89 @@ Files restored/added:
 - `assignment/climb_route_prompt.md` — already tracked, confirmed present
 - `results/figures/*.png` — force-added (gitignored by default as generated output)
 - Key result CSVs — force-added for submission completeness
+
+---
+
+---
+
+## 2026-03-23 — CREMP Benchmark: Hybrid ΔPSA Validation (Option C)
+
+### Motivation
+
+The 2026-03-17 full-dataset analysis showed ΔPSA AUC = 0.505 (chance). Two competing explanations: (A) conformer quality — vacuum ETKDGv3 membrane conformer is physically wrong; (B) label noise — cross-protocol PAMPA heterogeneity suppresses all signals. To test explanation A, we compared vacuum min-PSA membrane conformers against physically-grounded CREMP CHCl₃ CREST ensemble conformers.
+
+### CREMP dataset
+
+- 2,458 pre-computed CREST/GFN2-xTB conformational ensembles, CHCl₃ implicit solvent, 298.15 K
+- Up to 5,743 unique conformers per compound (mean ~700)
+- Source: Atz et al. 2024 (ETH Zurich DEL cyclic hexapeptides)
+- Boltzmann weights available per conformer
+
+### Option C: hybrid ΔPSA
+
+- **Aqueous PSA**: vacuum ETKDGv3 max-PSA (existing `feature_matrix.csv`)
+- **Membrane PSA**: CREMP CHCl₃ Boltzmann-weighted mean-PSA (`bw_psa3d`)
+- **Hybrid ΔPSA** = vacuum aq-PSA − CREMP BW mean-PSA
+- BW mean chosen over raw min-PSA: thermodynamically defensible (ensemble average vs. single conformer extreme)
+
+### Conformer sampling in cremp_deltapsa.py
+
+Sampling 100 conformers per compound: first 20 lowest-energy + uniform step across remainder. Ensures near-minimum PSA captured without enumerating all conformers (which would take ~6h). Runtime: ~20 min for full 2,458 compounds.
+
+### norm_delta_psa bug (Flag 1 — fixed 2026-03-24)
+
+`norm_delta_psa` (ΔPSA / SASA_total, dimensionless) was computed using a wrong conformer ID in `_total_sasa`. The variable `aq_idx` was an index into the sampled `psas[]` array, not an RDKit conformer ID. For compounds with n_confs > 100, `_total_sasa(mol, aq_idx)` was fetching a different conformer's total SASA than the one used for aq_psa. Fixed by introducing `aq_conf_id = sample_ids[int(aq_psas_idx)]`. CSV regenerated post-fix.
+
+### SMILES overlap: CREMP × CycPeptMPDB
+
+- CREMP valid canonical SMILES: 2,457 / 2,458
+- CycPeptMPDB canonical SMILES: 7,298 / 7,298
+- Inner join overlap: **2,435 compounds** (33.4% of CycPeptMPDB)
+- Permeable: 1,590 | Impermeable: 845
+
+### Structural bias finding
+
+The overlap is structurally different from the non-overlap portion of CycPeptMPDB:
+
+| Group | Mean MW | Mean Monomer Length | Source composition |
+|-------|---------|--------------------|--------------------|
+| Overlap | 774 Da | ~6.5 mer | 81.8% Townsend 2020 |
+| Non-overlap | 967 Da | ~8.7 mer | Diverse |
+
+Mann-Whitney test on Monomer_Length: p = 0.000 (highly significant). The overlap is dominated by 6–7 mer hexapeptides. The ≥9 residue threshold for chameleonic switching behavior (Yu et al. 2026) is not met by the majority of the overlap. This is the primary explanation for chance-level AUC on this subset.
+
+### Membrane conformer comparison: vacuum min-PSA vs CREMP BW mean-PSA
+
+- Pearson r = 0.603 (moderate correlation — compounds partially rank-ordered, but individual values diverge)
+- MAE = 11.6 Å²
+- CREMP BW mean lower than vacuum min in 42.4% of cases
+- Mean difference (CREMP BW − vacuum min) = +3.4 ± 14.3 Å² (near zero, but high variance)
+- Interpretation: vacuum and CHCl₃ ensemble largely agree at population level, but individual compounds show 10–20 Å² divergence. Neither method collapses compounds more than the other systematically.
+
+### AUC results (PAMPA, overlap n=2,435)
+
+| Descriptor | AUC | Notes |
+|-----------|-----|-------|
+| Vacuum ΔPSA (ETKDGv3) | 0.501 | Chance |
+| Hybrid ΔPSA (vac aq / CREMP BW mem) | 0.455 | Worse than vacuum |
+| CREMP PSA spread (CHCl₃ only) | 0.412 | Below chance |
+| CREMP BW mean-PSA (inverted) | 0.607 | See Flag 9 below |
+
+### Flag 9 — inverted bw_psa3d signal
+
+bw_psa3d AUC was initially reported as 0.393, labeled "(inverted)" in the code but not actually inverted before AUC computation. After fixing (Flag 9): inverted AUC = 0.607. Direction: **lower CHCl₃ BW mean-PSA predicts permeability**. This is the opposite of the ΔPSA hypothesis (high ΔPSA = chameleonic = permeable) but is consistent with lipophilicity: low polar surface area in CHCl₃ → lipophilic → crosses membranes. Effect likely confounded by MW and source bias in the 6–7 mer overlap subset. Not sufficient to conclude the signal is mechanistically chameleonic.
+
+### Conclusion
+
+On the 2,435-compound overlap subset, no ΔPSA variant achieves AUC > 0.51. The hybrid ΔPSA (Option C) does not improve over vacuum-only ΔPSA. Two non-exclusive explanations:
+
+1. **Structural bias (primary)**: The overlap is 6–7 mers. ΔPSA is theoretically expected to predict permeability only for ≥9 mer compounds where chameleonic switching is possible. We are testing the hypothesis on the wrong size range.
+
+2. **Label noise (also present)**: The overlap is 81.8% Townsend 2020 pooled PAMPA. Cross-source noise suppresses all descriptors, as confirmed in the 2026-03-17 analysis.
+
+### Gate condition outcome (Phase 3 mechanistic heads)
+
+**Gate NOT met.** CREMP ΔPSA labels cannot be validated as permeability-predictive on the current overlap. MechanisticHeads training gated until either: (a) overlap is extended to ≥9 mer compounds with PAMPA data, or (b) Furukawa-only stratified analysis is performed.
 
 ---
 

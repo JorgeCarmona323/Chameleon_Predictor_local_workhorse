@@ -138,11 +138,22 @@ CyclicPermeabilityModel
 
 ---
 
+## Training Data Constraint (locked)
+
+**Only compounds with solvent-derived conformational ensembles are used for training.**
+Vacuum ETKDGv3 conformers (feature_matrix.csv `delta_psa3d`) are excluded. Physically grounded environments only:
+- CHCl₃ implicit (CREMP CREST/GFN2-xTB) — available now, 2,435 compounds overlapping CycPeptMPDB
+- Water/membrane implicit (OpenMM GBSA-OBC) — Tier-2 pipeline, future
+
+Expanding the training set requires generating new solvent-derived ensembles, not adding vacuum-conformer compounds.
+
+---
+
 ## Phased Implementation Plan
 
 | Phase | Encoders active | Data required | Gate condition |
 |-------|----------------|---------------|----------------|
-| 1 | StaticDescriptor + DynamicEnsemble (scalars) | Full 7k feature_matrix.csv | Baseline — start here |
+| 1 | StaticDescriptor + DynamicEnsemble (scalars) | CREMP × CycPeptMPDB overlap (~2,435 compounds) | Baseline — start here |
 | 2 | + SequenceEncoder | Full 7k + custom HELM tokenizer | Custom residue vocabulary built |
 | 3 | + MechanisticHeads | CREMP overlap subset | CREMP benchmark validates ΔPSA labels |
 | 4 | + AssayContextEncoder | Source-stratified or single-protocol data | Furukawa-only or controlled experimental set |

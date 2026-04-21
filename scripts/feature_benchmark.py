@@ -259,19 +259,35 @@ def main():
     fm_labeled = fm[[smiles_col, perm_col, "Source"]].dropna(subset=[perm_col]).copy()
     fm_labeled["permeable"] = (fm_labeled[perm_col] >= PAMPA_THRESHOLD).astype(int)
 
-    # ── Merge to get compounds with both F7 and labels ─────────────────────
-    merged = cremp.merge(fm_labeled, left_on="smiles", right_on=smiles_col, how="inner")
+    # ── Canonicalize SMILES on both sides before merging ──────────────────
+    def _canonical(smi):
+        try:
+            mol = Chem.MolFromSmiles(str(smi))
+            return Chem.MolToSmiles(mol) if mol else None
+        except Exception:
+            return None
 
-    # Deduplicate on SMILES — keep first occurrence
+    cremp["canon_smiles"] = cremp["smiles"].apply(_canonical)
+    fm_labeled["canon_smiles"] = fm_labeled[smiles_col].apply(_canonical)
+
+    n_cremp_before = len(cremp)
+    cremp = cremp.dropna(subset=["canon_smiles"])
+    fm_labeled = fm_labeled.dropna(subset=["canon_smiles"])
+    print(f"  CREMP after canonicalization: {len(cremp)} (dropped {n_cremp_before - len(cremp)} unparseable)")
+
+    # ── Merge to get compounds with both F7 and labels ─────────────────────
+    merged = cremp.merge(fm_labeled, on="canon_smiles", how="inner")
+
+    # Deduplicate on canonical SMILES — keep first occurrence
     n_before = len(merged)
-    merged = merged.drop_duplicates(subset="smiles").copy()
+    merged = merged.drop_duplicates(subset="canon_smiles").copy()
     print(f"  Merged (F7 + labels): {len(merged)} compounds ({n_before - len(merged)} duplicates removed)")
     print(f"  Permeable: {merged['permeable'].sum()} ({merged['permeable'].mean()*100:.1f}%)")
     print(f"  Source breakdown: {merged['Source'].value_counts().to_dict()}")
     print(f"\n  WARNING: 2020_Townsend = {(merged['Source']=='2020_Townsend').sum()} / {len(merged)} compounds ({(merged['Source']=='2020_Townsend').mean()*100:.1f}%)")
     print(f"  Random CV may be optimistic — also running source-stratified CV (leave-source-out on Townsend)\n")
 
-    smiles = merged["smiles"].tolist()
+    smiles = merged["canon_smiles"].tolist()
     y = merged["permeable"].values
     sources = merged["Source"].values
 

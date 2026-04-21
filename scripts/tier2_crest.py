@@ -15,12 +15,12 @@ Scientific rationale:
 
   This is the thermodynamically correct quantity — not the vacuum max-min range.
 
-Reference compounds (5 final):
-  1. Hexapeptide   (ID=2,   Rezai & Lokey JACS 2006)      PAMPA=-6.20  impermeable
-  2. 1NMe3         (ID=980, White & Lokey NatChemBiol 2011) PAMPA=-5.52  permeable
-  3. CsA           (ID=1,   Witek JCTC 2016)               PAMPA=-5.90  permeable
-  4. DP-172        (ID=183, CHUGAI 2013)                   PAMPA=-4.15  permeable
-  5. c*[PSLYF]     (ID=1829,Hickey JMedChem 2016)          PAMPA=-9.10  impermeable
+Reference compounds (5 final) — size-stratified for chameleonic effect validation:
+  0. Hexapeptide   (ID=2,   Rezai & Lokey JACS 2006)      PAMPA=-6.20  impermeable  6-mer  negative control
+  1. CsA           (ID=1,   Witek JCTC 2016)               PAMPA=-5.90  permeable   11-mer  gold standard chameleonic
+  2. c*[PSLYF]     (ID=1829,Hickey JMedChem 2016)          PAMPA=-9.10  impermeable 11-mer  large impermeable
+  3. DP-955        (ID=917, CHUGAI 2013)                   PAMPA=-5.20  permeable   15-mer  largest permeable
+  4. DP-944        (ID=906, CHUGAI 2013)                   PAMPA=-7.00  impermeable 15-mer  largest impermeable
 
 Tools:
   - CREST 3.x  (conda install -c conda-forge crest)
@@ -65,20 +65,6 @@ REFERENCE_COMPOUNDS = [
         "hbd": 6,
     },
     {
-        "name": "N-Me Hexapeptide (1NMe3)",
-        "short": "1NMe3",
-        "cycpeptmpdb_id": 980,
-        "smiles": (
-            "CC(C)C[C@@H]1NC(=O)[C@H](Cc2ccc(O)cc2)N(C)C(=O)[C@H]2CCCN2C(=O)"
-            "[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@@H](CC(C)C)N(C)C1=O"
-        ),
-        "source": "White & Lokey, Nat Chem Biol 2011",
-        "pampa": -5.52,
-        "permeable": True,
-        "db_delta_psa": 1.0,
-        "hbd": 3,
-    },
-    {
         "name": "Cyclosporin A",
         "short": "CsA",
         "cycpeptmpdb_id": 1,
@@ -95,17 +81,6 @@ REFERENCE_COMPOUNDS = [
         "hbd": 5,
     },
     {
-        "name": "DP-172",
-        "short": "DP172",
-        "cycpeptmpdb_id": 183,
-        "smiles": None,  # fetched from feature matrix at runtime
-        "source": "CHUGAI 2013 pharmaceutical screen",
-        "pampa": -4.15,
-        "permeable": True,
-        "db_delta_psa": -47.0,
-        "hbd": 5,
-    },
-    {
         "name": "c*[PSLYF]",
         "short": "PSLYF",
         "cycpeptmpdb_id": 1829,
@@ -115,6 +90,40 @@ REFERENCE_COMPOUNDS = [
         "permeable": False,
         "db_delta_psa": 0.0,
         "hbd": 8,
+    },
+    {
+        "name": "DP-955",
+        "short": "DP955",
+        "cycpeptmpdb_id": 917,
+        "smiles": (
+            "CC[C@H](C)[C@H](NC(=O)[C@@H]1CC(=O)N[C@@H](C)C(=O)N[C@@H]([C@@H](C)O)"
+            "C(=O)N(C)CC(=O)N[C@@H](CC(C)C)C(=O)N2CCC[C@H]2C(=O)N(C)[C@@H](CC(C)C)"
+            "C(=O)N[C@@H](Cc2ccccc2)C(=O)N(C)[C@@H](Cc2ccccc2)C(=O)N(C)[C@@H](C)C(=O)"
+            "N(C)[C@@H](CC(C)C)C(=O)N[C@@H](C)C(=O)N(C)[C@@H](CC(C)C)C(=O)N1)"
+            "C(=O)N1CCCCC1"
+        ),
+        "source": "CHUGAI 2013 pharmaceutical screen",
+        "pampa": -5.20,
+        "permeable": True,
+        "db_delta_psa": None,
+        "hbd": None,
+    },
+    {
+        "name": "DP-944",
+        "short": "DP944",
+        "cycpeptmpdb_id": 906,
+        "smiles": (
+            "CC[C@H](C)[C@H](NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@H](CC(C)C)NC(=O)[C@H](C)"
+            "N(C)C(=O)[C@@H]1CC(=O)N[C@H](C(C)C)C(=O)N(C)[C@@H](CC(C)C)C(=O)N(C)"
+            "[C@@H](CC(C)C)C(=O)N[C@@H](C)C(=O)N[C@@H](Cc2ccccc2)C(=O)N[C@@H]([C@@H](C)O)"
+            "C(=O)N[C@@H](CC(C)C)C(=O)N(C)[C@@H](Cc2ccccc2)C(=O)N(C)[C@@H](CC(C)C)"
+            "C(=O)N1)C(=O)N1CCCCC1"
+        ),
+        "source": "CHUGAI 2013 pharmaceutical screen",
+        "pampa": -7.00,
+        "permeable": False,
+        "db_delta_psa": None,
+        "hbd": None,
     },
 ]
 

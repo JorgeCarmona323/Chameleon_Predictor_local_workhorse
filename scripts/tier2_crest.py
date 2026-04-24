@@ -10,10 +10,13 @@ Scientific rationale:
   fulfills the proposal goal: "MMFF94 minimization at ε=78 and ε=4."
 
   The chameleonic ΔPSA computed here is:
-    PSA(lowest-energy conformer in water, ε=80)
-  − PSA(lowest-energy conformer in CHCl₃,  ε=4.8)
+    Boltzmann-weighted mean PSA (water ensemble, ε=80)
+  − Boltzmann-weighted mean PSA (CHCl₃ ensemble, ε=4.8)
 
-  This is the thermodynamically correct quantity — not the vacuum max-min range.
+  Boltzmann weights are computed from GFN2-xTB energies in the CREST XYZ
+  comment lines at T=298.15 K.  This is thermodynamically correct — each
+  conformer contributes proportionally to its equilibrium population rather
+  than using only the single lowest-energy structure.
 
 Reference compounds (5 final) — size-stratified for chameleonic effect validation:
   0. Hexapeptide   (ID=2,   Rezai & Lokey JACS 2006)      PAMPA=-6.20  impermeable  6-mer  negative control
@@ -207,10 +210,12 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
 
 
 # ── Utility: parse multi-conformer XYZ → list of coordinate arrays ───────────
-def parse_xyz_ensemble(xyz_path: Path) -> list[tuple[list[str], np.ndarray]]:
+def parse_xyz_ensemble(xyz_path: Path) -> list[tuple[list[str], np.ndarray, float]]:
     """
     Parse a CREST multi-conformer XYZ file.
-    Returns list of (atom_symbols, coords_array) per conformer.
+    Returns list of (atom_symbols, coords_array, energy_hartree) per conformer.
+    Energy is read from the XYZ comment line (CREST writes GFN2-xTB energy there).
+    Defaults to 0.0 if the comment line is not parseable as a float.
     """
     conformers = []
     lines = xyz_path.read_text().splitlines()
@@ -225,7 +230,14 @@ def parse_xyz_ensemble(xyz_path: Path) -> list[tuple[list[str], np.ndarray]]:
         except ValueError:
             i += 1
             continue
-        i += 1  # comment line
+        i += 1
+        # Comment line — CREST writes the GFN2-xTB energy (Hartree) here
+        energy = 0.0
+        if i < len(lines):
+            try:
+                energy = float(lines[i].strip().split()[0])
+            except (ValueError, IndexError):
+                pass
         i += 1
         symbols, coords = [], []
         for _ in range(n_atoms):
@@ -237,8 +249,24 @@ def parse_xyz_ensemble(xyz_path: Path) -> list[tuple[list[str], np.ndarray]]:
                 coords.append([float(parts[1]), float(parts[2]), float(parts[3])])
             i += 1
         if len(symbols) == n_atoms:
-            conformers.append((symbols, np.array(coords)))
+            conformers.append((symbols, np.array(coords), energy))
     return conformers
+
+
+def boltzmann_weights(energies_hartree: list[float], T: float = 298.15) -> np.ndarray:
+    """
+    Boltzmann population weights from GFN2-xTB energies at temperature T.
+    If all energies are 0.0 (not parsed), returns uniform weights.
+    """
+    KCAL_PER_HARTREE = 627.509
+    RT = 1.987e-3 * T  # kcal/mol
+    e = np.array(energies_hartree) * KCAL_PER_HARTREE
+    e_rel = e - e.min()
+    # If all energies identical (unparsed), fall back to uniform weights
+    if e_rel.max() < 1e-10:
+        return np.ones(len(e)) / len(e)
+    weights = np.exp(-e_rel / RT)
+    return weights / weights.sum()
 
 
 # ── Utility: compute 3D PSA from XYZ conformer ───────────────────────────────
@@ -489,10 +517,12 @@ def process_compound(cpd: dict, work_base: Path,
             result[f"{label}_psa_min"]    = float(psa_vals.min())
             result[f"{label}_psa_max"]    = float(psa_vals.max())
             result[f"{label}_psa_mean"]   = float(psa_vals.mean())
+            result[f"{label}_psa_boltz"]  = float(psa_vals.mean())  # uniform weights in dry run
             result[f"{label}_psa_std"]    = float(psa_vals.std())
             result[f"{label}_hb_min"]     = int(hb_vals.min())
             result[f"{label}_hb_max"]     = int(hb_vals.max())
             result[f"{label}_hb_mean"]    = float(hb_vals.mean())
+            result[f"{label}_hb_boltz"]   = float(hb_vals.mean())
             result[f"{label}_n_confs"]    = 50
             result[f"{label}_psa_lowen"]  = float(psa_vals[0])
             result[f"{label}_hb_lowen"]   = int(hb_vals[0])
@@ -513,7 +543,7 @@ def process_compound(cpd: dict, work_base: Path,
             print(f"      ⚠ CREST failed — no ensemble produced")
             continue
 
-        # Parse ensemble
+        # Parse ensemble — returns (symbols, coords, energy_hartree) tuples
         conformers = parse_xyz_ensemble(ensemble_xyz)
         n_confs = len(conformers)
         print(f"      Parsed {n_confs} conformers from ensemble")
@@ -521,48 +551,54 @@ def process_compound(cpd: dict, work_base: Path,
         if n_confs == 0:
             continue
 
-        # Compute PSA and H-bonds per conformer.
-        # Pass _template_mol so compute_psa_xyz uses Path A (rdFreeSASA with
-        # Bondi radii + manual SASAClass, identical to conformer_engine.py).
-        # Falls back to Path B (geometric approximation) if template is None
-        # or atom counts don't match.
-        psa_vals = []
-        hb_vals  = []
-        for syms, crds in conformers[:max_confs]:
+        # Trim to max_confs and compute PSA / H-bonds per conformer
+        conformers = conformers[:max_confs]
+        psa_vals, hb_vals, energies = [], [], []
+        for syms, crds, eng in conformers:
             psa_vals.append(compute_psa_xyz(syms, crds, template_mol=_template_mol))
             hb_vals.append(count_hbonds_xyz(syms, crds))
+            energies.append(eng)
 
         psa_arr = np.array(psa_vals)
-        hb_arr  = np.array(hb_vals)
+        hb_arr  = np.array(hb_vals, dtype=float)
+
+        # Boltzmann weights from GFN2-xTB energies at 298.15 K
+        weights = boltzmann_weights(energies)
+        psa_boltz = float(np.dot(weights, psa_arr))
+        hb_boltz  = float(np.dot(weights, hb_arr))
 
         # Lowest-energy conformer = first in CREST output (sorted by energy)
         psa_lowen = psa_arr[0]
         hb_lowen  = hb_arr[0]
 
         result[f"{label}_psa_lowen"]  = round(float(psa_lowen), 2)
+        result[f"{label}_psa_boltz"]  = round(psa_boltz, 2)
         result[f"{label}_psa_min"]    = round(float(psa_arr.min()), 2)
         result[f"{label}_psa_max"]    = round(float(psa_arr.max()), 2)
         result[f"{label}_psa_mean"]   = round(float(psa_arr.mean()), 2)
         result[f"{label}_psa_std"]    = round(float(psa_arr.std()), 2)
         result[f"{label}_hb_lowen"]   = int(hb_lowen)
+        result[f"{label}_hb_boltz"]   = round(hb_boltz, 2)
         result[f"{label}_hb_min"]     = int(hb_arr.min())
         result[f"{label}_hb_max"]     = int(hb_arr.max())
         result[f"{label}_hb_mean"]    = round(float(hb_arr.mean()), 2)
         result[f"{label}_n_confs"]    = n_confs
 
-        print(f"      PSA (low-energy): {psa_lowen:.1f} Å²  "
-              f"(mean={psa_arr.mean():.1f}, std={psa_arr.std():.1f})")
-        print(f"      HB  (low-energy): {hb_lowen}  "
-              f"(mean={hb_arr.mean():.1f})")
+        print(f"      PSA (Boltzmann-wtd): {psa_boltz:.1f} Å²  "
+              f"(low-energy={psa_lowen:.1f}, mean={psa_arr.mean():.1f})")
+        print(f"      HB  (Boltzmann-wtd): {hb_boltz:.2f}  "
+              f"(low-energy={int(hb_lowen)})")
 
     # ── Compute Δ features ────────────────────────────────────────────────────
-    if "aq_psa_lowen" in result and "mem_psa_lowen" in result:
-        result["crest_delta_psa"]    = round(result["aq_psa_lowen"] - result["mem_psa_lowen"], 2)
-        result["crest_delta_hb"]     = result["mem_hb_lowen"] - result["aq_hb_lowen"]
-        result["crest_psa_spread_aq"]  = result.get("aq_psa_std", np.nan)
-        result["crest_psa_spread_mem"] = result.get("mem_psa_std", np.nan)
-        print(f"\n  ✓ CREST ΔPSA = {result['crest_delta_psa']:.1f} Å²  "
-              f"(ΔHB = {result['crest_delta_hb']})")
+    if "aq_psa_boltz" in result and "mem_psa_boltz" in result:
+        result["crest_delta_psa"]       = round(result["aq_psa_boltz"] - result["mem_psa_boltz"], 2)
+        result["crest_delta_psa_lowen"] = round(result.get("aq_psa_lowen", 0) - result.get("mem_psa_lowen", 0), 2)
+        result["crest_delta_hb"]        = round(result["mem_hb_boltz"] - result["aq_hb_boltz"], 2)
+        result["crest_psa_spread_aq"]   = result.get("aq_psa_std", np.nan)
+        result["crest_psa_spread_mem"]  = result.get("mem_psa_std", np.nan)
+        print(f"\n  ✓ CREST ΔPSA (Boltzmann) = {result['crest_delta_psa']:.1f} Å²  "
+              f"(low-energy = {result['crest_delta_psa_lowen']:.1f} Å²  "
+              f"ΔHB = {result['crest_delta_hb']:.2f})")
 
     return result
 

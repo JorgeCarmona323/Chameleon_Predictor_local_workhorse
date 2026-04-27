@@ -866,20 +866,20 @@ def parse_args() -> argparse.Namespace:
         epilog="""
 Parallelisation (one job per compound):
   python tier2_crest.py --compound 0 --threads 8   # HexPep
-  python tier2_crest.py --compound 1 --threads 8   # 1NMe3
-  python tier2_crest.py --compound 2 --threads 8   # CsA
-  python tier2_crest.py --compound 3 --threads 8   # DP-172
-  python tier2_crest.py --compound 4 --threads 8   # PSLYF
+  python tier2_crest.py --compound 1 --threads 8   # CsA
+  python tier2_crest.py --compound 2 --threads 8   # PSLYF
+  python tier2_crest.py --compound 3 --threads 8   # DP-955
+  python tier2_crest.py --compound 4 --threads 8   # DP-944
 
   After all 5 finish:
   python tier2_crest.py --merge
 
 Compound index reference:
-  0 = HexPep   (impermeable, 6-mer)
-  1 = 1NMe3    (permeable,   6-mer, N-methylated)
-  2 = CsA      (permeable,  11-mer, chameleonic)
-  3 = DP-172   (permeable,   CHUGAI)
-  4 = PSLYF    (impermeable, HBD=8)
+  0 = HexPep  (impermeable,  6-mer)
+  1 = CsA     (permeable,   11-mer, chameleonic, expected ΔPSA ~75 Å²)
+  2 = PSLYF   (impermeable, 11-mer, HBD=8)
+  3 = DP-955  (permeable,   15-mer, CHUGAI 2013)
+  4 = DP-944  (impermeable, 15-mer, CHUGAI 2013)
         """
     )
     parser.add_argument("--matrix",    "-m", default="results/feature_matrix.csv")

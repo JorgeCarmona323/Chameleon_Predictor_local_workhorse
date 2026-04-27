@@ -5,11 +5,11 @@ Submits 5 independent SLURM jobs for tier2_crest.py (one per reference compound)
 then queues a merge job that runs automatically after all 5 complete.
 
 Reference compounds (indexed 0–4):
-  0 — Hexapeptide  (impermeable,  6-mer, HBD=6)
-  1 — 1NMe3        (permeable,    6-mer, N-Me, HBD=3)
-  2 — CsA          (permeable,    11-mer, chameleonic, expected ΔPSA ~75 Å²)
-  3 — DP-172       (permeable,    CHUGAI 2013)
-  4 — c*[PSLYF]    (impermeable,  HBD=8)
+  0 — Hexapeptide  (impermeable,  6-mer,  HBD=6)
+  1 — CsA          (permeable,   11-mer,  chameleonic, expected ΔPSA ~75 Å²)
+  2 — c*[PSLYF]   (impermeable, 11-mer,  HBD=8)
+  3 — DP-955       (permeable,   15-mer,  CHUGAI 2013)
+  4 — DP-944       (impermeable, 15-mer,  CHUGAI 2013)
 
 Usage:
   # Dry run — preview the SLURM scripts without submitting
@@ -55,11 +55,11 @@ LOGS_DIR    = "results/slurm_logs"
 
 # ── Compound metadata (mirrors REFERENCE_COMPOUNDS in tier2_crest.py) ─────────
 COMPOUNDS = [
-    {"idx": 0, "short": "HexPep",  "name": "Hexapeptide",       "permeable": False},
-    {"idx": 1, "short": "1NMe3",   "name": "N-Me Hexapeptide",  "permeable": True},
-    {"idx": 2, "short": "CsA",     "name": "Cyclosporin A",     "permeable": True},
-    {"idx": 3, "short": "DP172",   "name": "DP-172",            "permeable": True},
-    {"idx": 4, "short": "PSLYF",   "name": "c*[PSLYF]",        "permeable": False},
+    {"idx": 0, "short": "HexPep",  "name": "Hexapeptide",    "permeable": False},
+    {"idx": 1, "short": "CsA",     "name": "Cyclosporin A",  "permeable": True},
+    {"idx": 2, "short": "PSLYF",   "name": "c*[PSLYF]",     "permeable": False},
+    {"idx": 3, "short": "DP955",   "name": "DP-955",         "permeable": True},
+    {"idx": 4, "short": "DP944",   "name": "DP-944",         "permeable": False},
 ]
 
 

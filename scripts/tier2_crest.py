@@ -253,6 +253,40 @@ def parse_xyz_ensemble(xyz_path: Path) -> list[tuple[list[str], np.ndarray, floa
     return conformers
 
 
+def save_top_conformers(
+    conformers: list[tuple[list[str], np.ndarray, float]],
+    weights: np.ndarray,
+    label: str,
+    compound_short: str,
+    outdir: Path,
+    top_n: int = 10,
+) -> Path:
+    """
+    Save top-N Boltzmann-weighted conformers as a multi-conformer XYZ file.
+
+    Conformers are sorted by weight (highest first). Comment line encodes rank,
+    weight, and GFN2-xTB energy so the file can be used directly as input to
+    xTB, ORCA, CREST restart, or converted to SDF for docking.
+
+    Output: results/conformers/{compound_short}/{label}/top{N}_boltzmann.xyz
+    """
+    ranked = sorted(zip(weights, conformers), key=lambda x: -x[0])[:top_n]
+
+    conf_dir = outdir / "conformers" / compound_short / label
+    conf_dir.mkdir(parents=True, exist_ok=True)
+    out_path = conf_dir / f"top{top_n}_boltzmann.xyz"
+
+    lines = []
+    for rank, (w, (syms, crds, eng)) in enumerate(ranked, start=1):
+        lines.append(str(len(syms)))
+        lines.append(f"rank={rank} weight={w:.6f} energy={eng:.8f}")
+        for sym, (x, y, z) in zip(syms, crds):
+            lines.append(f"{sym}  {x:.6f}  {y:.6f}  {z:.6f}")
+
+    out_path.write_text("\n".join(lines))
+    return out_path
+
+
 def boltzmann_weights(energies_hartree: list[float], T: float = 298.15) -> np.ndarray:
     """
     Boltzmann population weights from GFN2-xTB energies at temperature T.
@@ -448,7 +482,8 @@ def count_hbonds_xyz(symbols: list[str], coords: np.ndarray) -> int:
 
 # ── Process one compound ──────────────────────────────────────────────────────
 def process_compound(cpd: dict, work_base: Path,
-                     max_confs: int, dry_run: bool) -> dict:
+                     max_confs: int, dry_run: bool,
+                     top_confs: int = 10, outdir: Path | None = None) -> dict:
     name  = cpd["name"]
     short = cpd["short"]
     smi   = cpd["smiles"]
@@ -589,6 +624,13 @@ def process_compound(cpd: dict, work_base: Path,
         print(f"      HB  (Boltzmann-wtd): {hb_boltz:.2f}  "
               f"(low-energy={int(hb_lowen)})")
 
+        # Save top-N conformers for downstream QM / docking / MD input
+        if top_confs > 0 and outdir is not None:
+            xyz_out = save_top_conformers(
+                conformers, weights, label, short, outdir, top_n=top_confs
+            )
+            print(f"      Saved top-{top_confs} conformers → {xyz_out}")
+
     # ── Compute Δ features ────────────────────────────────────────────────────
     if "aq_psa_boltz" in result and "mem_psa_boltz" in result:
         result["crest_delta_psa"]       = round(result["aq_psa_boltz"] - result["mem_psa_boltz"], 2)
@@ -711,7 +753,8 @@ def plot_results(results: list[dict], outdir: Path) -> None:
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
-        compound_idx: int | None = None, n_threads: int | None = None) -> None:
+        compound_idx: int | None = None, n_threads: int | None = None,
+        top_confs: int = 10) -> None:
     """
     Run Tier-2 CREST validation.
 
@@ -798,7 +841,8 @@ def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
     results = []
     try:
         for cpd in compounds_to_run:
-            r = process_compound(cpd, work_base, max_confs, dry_run)
+            r = process_compound(cpd, work_base, max_confs, dry_run,
+                                 top_confs=top_confs, outdir=outdir)
             results.append(r)
     finally:
         # Restore original run_crest if it was monkey-patched
@@ -893,6 +937,11 @@ Compound index reference:
     parser.add_argument("--threads",   type=int, default=None,
                         metavar="N",
                         help="CREST --T threads per job. Default: all available cores.")
+    parser.add_argument("--top-confs", type=int, default=10,
+                        metavar="N",
+                        help="Save top-N Boltzmann-weighted conformers per solvent as "
+                             "multi-conformer XYZ in results/conformers/. "
+                             "Set to 0 to disable. (default: 10)")
     parser.add_argument("--merge",     action="store_true",
                         help="Merge per-compound CSVs after parallel jobs complete.")
     return parser.parse_args()
@@ -905,4 +954,5 @@ if __name__ == "__main__":
     else:
         run(args.matrix, Path(args.outdir),
             max_confs=args.max_confs, dry_run=args.dry_run,
-            compound_idx=args.compound, n_threads=args.threads)
+            compound_idx=args.compound, n_threads=args.threads,
+            top_confs=args.top_confs)

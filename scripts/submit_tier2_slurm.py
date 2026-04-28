@@ -90,6 +90,9 @@ def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
         # ── Environment ──────────────────────────────────────────────────────
         source "${{HOME}}/{CONDA_SH.lstrip('~/')}"
         conda activate {CONDA_ENV}
+        export OMP_NUM_THREADS={cpus}
+        export OPENBLAS_NUM_THREADS=1
+        export MKL_NUM_THREADS=1
 
         cd {repo_root}
 
@@ -204,6 +207,9 @@ def build_test_script(repo_root: str) -> str:
         f"#SBATCH --error={repo_root}/test_crest_%j.err\n"
         f'source "${{HOME}}/{CONDA_SH.lstrip("~/")}" \n'
         f"conda activate {CONDA_ENV}\n"
+        "export OMP_NUM_THREADS=1\n"
+        "export OPENBLAS_NUM_THREADS=1\n"
+        "export MKL_NUM_THREADS=1\n"
         "echo \"=== ENV ===\"\n"
         "which crest\n"
         "which xtb\n"

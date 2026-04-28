@@ -44,10 +44,8 @@ import tempfile
 import warnings
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy import stats
 
 warnings.filterwarnings("ignore")
 
@@ -283,7 +281,7 @@ def save_top_conformers(
         for sym, (x, y, z) in zip(syms, crds):
             lines.append(f"{sym}  {x:.6f}  {y:.6f}  {z:.6f}")
 
-    out_path.write_text("\n".join(lines))
+    out_path.write_text("\n".join(lines) + "\n")
     return out_path
 
 
@@ -645,112 +643,6 @@ def process_compound(cpd: dict, work_base: Path,
     return result
 
 
-# ── Plotting ──────────────────────────────────────────────────────────────────
-def plot_results(results: list[dict], outdir: Path) -> None:
-    valid = [r for r in results if "crest_delta_psa" in r]
-    if not valid:
-        print("No valid results to plot")
-        return
-
-    names   = [r["compound"].replace(" (1NMe3)", "\n(1NMe3)") for r in valid]
-    colors  = ["#D6604D" if r["permeable"] else "#4393C3" for r in valid]
-    pampa   = [r["pampa"] for r in valid]
-    c_dpsa  = [r["crest_delta_psa"] for r in valid]
-    db_dpsa = [r["db_delta_psa"] for r in valid]
-    c_dhb   = [r["crest_delta_hb"] for r in valid]
-    n       = len(valid)
-
-    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
-    fig.suptitle(
-        "Tier-2 CREST+ALPB Validation — Dual-Dielectric Conformer Sampling\n"
-        "Water (ε=80) vs CHCl₃ (ε=4.8) | GFN2-xTB + ALPB",
-        fontsize=11, fontweight="bold",
-    )
-
-    # Panel A: ΔPSA comparison (CREST vs DB)
-    ax = axes[0, 0]
-    x = np.arange(n)
-    w = 0.35
-    ax.bar(x - w/2, db_dpsa, width=w, label="DB (static, CycPeptMPDB)",
-           color="#BEAED4", edgecolor="grey", linewidth=0.5)
-    ax.bar(x + w/2, c_dpsa, width=w, label="CREST+ALPB (ensemble)",
-           color="#FDC086", edgecolor="grey", linewidth=0.5)
-    ax.axhline(0, color="black", linewidth=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(names, fontsize=8)
-    ax.set_ylabel("ΔPSA (Å²) = PSA_aq − PSA_mem")
-    ax.set_title("A. ΔPSA: DB static vs CREST+ALPB ensemble", fontweight="bold")
-    ax.legend(fontsize=8)
-
-    # Panel B: PAMPA vs CREST ΔPSA
-    ax = axes[0, 1]
-    for i, r in enumerate(valid):
-        c = "#D6604D" if r["permeable"] else "#4393C3"
-        ax.scatter(r["crest_delta_psa"], r["pampa"],
-                   s=120, c=c, edgecolors="black", linewidths=0.8, zorder=4)
-        ax.annotate(r["compound"].split("(")[0].strip(),
-                    (r["crest_delta_psa"], r["pampa"]),
-                    xytext=(5, 4), textcoords="offset points", fontsize=7.5)
-    ax.axhline(-6.0, color="grey", linestyle="--", linewidth=0.8,
-               label="PAMPA threshold (−6.0)")
-    ax.set_xlabel("CREST ΔPSA (Å²)")
-    ax.set_ylabel("PAMPA LogPexp (log cm/s)")
-    ax.set_title("B. PAMPA vs CREST ΔPSA", fontweight="bold")
-    from matplotlib.patches import Patch
-    ax.legend(handles=[
-        Patch(facecolor="#D6604D", label="Permeable"),
-        Patch(facecolor="#4393C3", label="Impermeable"),
-        plt.Line2D([0],[0], color="grey", linestyle="--", label="−6.0 threshold"),
-    ], fontsize=8)
-
-    # Panel C: PAMPA vs CREST ΔHB
-    ax = axes[1, 0]
-    for i, r in enumerate(valid):
-        c = "#D6604D" if r["permeable"] else "#4393C3"
-        ax.scatter(r["crest_delta_hb"], r["pampa"],
-                   s=120, c=c, edgecolors="black", linewidths=0.8, zorder=4)
-        ax.annotate(r["compound"].split("(")[0].strip(),
-                    (r["crest_delta_hb"], r["pampa"]),
-                    xytext=(5, 4), textcoords="offset points", fontsize=7.5)
-    ax.axhline(-6.0, color="grey", linestyle="--", linewidth=0.8)
-    ax.set_xlabel("CREST ΔHB (H-bonds mem − H-bonds aq)")
-    ax.set_ylabel("PAMPA LogPexp (log cm/s)")
-    ax.set_title("C. PAMPA vs CREST ΔHB\n(mechanistic: intramolecular H-bond formation)",
-                 fontweight="bold")
-
-    # Panel D: CREST ΔPSA vs DB ΔPSA cross-check
-    ax = axes[1, 1]
-    for i, r in enumerate(valid):
-        c = "#D6604D" if r["permeable"] else "#4393C3"
-        ax.scatter(r["db_delta_psa"], r["crest_delta_psa"],
-                   s=120, c=c, edgecolors="black", linewidths=0.8, zorder=4)
-        ax.annotate(r["compound"].split("(")[0].strip(),
-                    (r["db_delta_psa"], r["crest_delta_psa"]),
-                    xytext=(5, 4), textcoords="offset points", fontsize=7.5)
-    all_v = c_dpsa + db_dpsa
-    lim = [min(all_v) - 5, max(all_v) + 5]
-    ax.plot(lim, lim, "k--", linewidth=0.8, alpha=0.5, label="y=x")
-    ax.set_xlim(lim); ax.set_ylim(lim)
-    ax.set_xlabel("DB ΔPSA (static CycPeptMPDB)")
-    ax.set_ylabel("CREST ΔPSA (ensemble, dual-dielectric)")
-    ax.set_title("D. CREST vs DB Cross-Check\n(DB static misses CsA chameleonism)",
-                 fontweight="bold")
-    ax.legend(fontsize=8)
-    if len(valid) >= 3:
-        try:
-            r_val, _ = stats.pearsonr(db_dpsa, c_dpsa)
-            ax.text(0.05, 0.95, f"r = {r_val:.2f}", transform=ax.transAxes,
-                    fontsize=10, va="top", fontweight="bold")
-        except Exception:
-            pass
-
-    plt.tight_layout()
-    fig_path = outdir / "figures" / "tier2_crest_crosscheck.png"
-    plt.savefig(fig_path, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"\nSaved: {fig_path}")
-
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
         compound_idx: int | None = None, n_threads: int | None = None,
@@ -876,7 +768,7 @@ def _save_and_plot(results: list[dict], outdir: Path) -> None:
     avail = [c for c in disp_cols if c in table.columns]
     print(table[avail].to_string(index=False))
     print(f"\nSaved: {out_csv}")
-    plot_results(results, outdir)
+    print(f"Run locally: python scripts/plot_tier2_results.py --csv {out_csv}")
 
 
 def merge_parallel_results(outdir: Path) -> None:
@@ -900,7 +792,7 @@ def merge_parallel_results(outdir: Path) -> None:
     out_csv = outdir / "tier2_crest_table.csv"
     combined.to_csv(out_csv, index=False)
     print(f"Merged {len(combined)} compounds → {out_csv}")
-    plot_results(combined.to_dict("records"), outdir)
+    print(f"Run locally: python scripts/plot_tier2_results.py --csv {out_csv}")
 
 
 def parse_args() -> argparse.Namespace:

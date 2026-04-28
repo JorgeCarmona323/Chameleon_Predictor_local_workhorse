@@ -194,7 +194,7 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
     print(f"      Running: {' '.join(cmd)}")
     result = subprocess.run(
         cmd, cwd=work_dir,
-        capture_output=True, text=True, timeout=7200,
+        capture_output=True, text=True, timeout=86400,
     )
 
     ensemble = work_dir / "crest_conformers.xyz"
@@ -575,7 +575,7 @@ def process_compound(cpd: dict, work_base: Path,
             try:
                 ensemble_xyz = run_crest(xyz_in, sol_dir, solvent, max_confs)
             except subprocess.TimeoutExpired:
-                print(f"      ⚠ CREST timed out")
+                print(f"      ⚠ CREST timed out after 24h")
                 ensemble_xyz = None
             except Exception as e:
                 print(f"      ⚠ CREST error: {e}")
@@ -718,7 +718,7 @@ def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
             print(f"      Running: {' '.join(cmd)}")
             result = subprocess.run(
                 cmd, cwd=work_dir,
-                capture_output=True, text=True, timeout=7200,
+                capture_output=True, text=True, timeout=86400,
             )
             ensemble = work_dir / "crest_conformers.xyz"
             if ensemble.exists() and ensemble.stat().st_size > 0:

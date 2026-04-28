@@ -186,6 +186,7 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
         "crest", str(xyz_path.resolve()),
         "--alpb", solvent,
         "--T", str(max(1, os.cpu_count() - 1)),
+        "--noreftopo",
         "--keepdir",
     ]
     if charge != 0:
@@ -711,6 +712,7 @@ def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
                 "crest", str(xyz_path.resolve()),
                 "--alpb", solvent,
                 "--T", str(_nt),
+                "--noreftopo",
                 "--keepdir",
             ]
             if charge != 0:

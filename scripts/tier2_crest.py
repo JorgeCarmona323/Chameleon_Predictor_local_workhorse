@@ -258,59 +258,31 @@ def save_top_conformers(
     compound_short: str,
     outdir: Path,
     top_n: int = 10,
-    template_mol=None,
-) -> tuple[Path, Path | None]:
+) -> Path:
     """
-    Save top-N Boltzmann-weighted conformers as XYZ and (if template_mol provided) SDF.
+    Save top-N Boltzmann-weighted conformers as a multi-conformer XYZ file.
 
-    Conformers are sorted by Boltzmann weight (highest first). Comment line encodes
-    rank, weight, and GFN2-xTB energy. SDF properties include the same metadata
-    for use in docking pipelines.
+    Conformers are sorted by weight (highest first). Comment line encodes rank,
+    weight, and GFN2-xTB energy so the file can be used directly as input to
+    xTB, ORCA, or docking pipelines.
 
-    Returns: (xyz_path, sdf_path or None)
-    Output:  results/conformers/{compound_short}/{label}/top{N}_boltzmann.{xyz,sdf}
+    Output: results/conformers/{compound_short}/{label}/top{N}_boltzmann.xyz
     """
     ranked = sorted(zip(weights, conformers), key=lambda x: -x[0])[:top_n]
 
     conf_dir = outdir / "conformers" / compound_short / label
     conf_dir.mkdir(parents=True, exist_ok=True)
+    out_path = conf_dir / f"top{top_n}_boltzmann.xyz"
 
-    # ── XYZ ──────────────────────────────────────────────────────────────────
-    out_xyz = conf_dir / f"top{top_n}_boltzmann.xyz"
     lines = []
     for rank, (w, (syms, crds, eng)) in enumerate(ranked, start=1):
         lines.append(str(len(syms)))
         lines.append(f"rank={rank} weight={w:.6f} energy={eng:.8f}")
         for sym, (x, y, z) in zip(syms, crds):
             lines.append(f"{sym}  {x:.6f}  {y:.6f}  {z:.6f}")
-    out_xyz.write_text("\n".join(lines) + "\n")
 
-    # ── SDF (requires template mol with connectivity) ─────────────────────────
-    out_sdf = None
-    if template_mol is not None:
-        try:
-            from rdkit import Chem
-            out_sdf = conf_dir / f"top{top_n}_boltzmann.sdf"
-            writer = Chem.SDWriter(str(out_sdf))
-            for rank, (w, (syms, crds, eng)) in enumerate(ranked, start=1):
-                mol_copy = Chem.RWMol(Chem.Mol(template_mol))
-                mol_copy.RemoveAllConformers()
-                conf = Chem.Conformer(mol_copy.GetNumAtoms())
-                for i, (x, y, z) in enumerate(crds):
-                    conf.SetAtomPosition(i, (float(x), float(y), float(z)))
-                mol_copy.AddConformer(conf, assignId=True)
-                mol_out = mol_copy.GetMol()
-                mol_out.SetProp("_Name", f"{compound_short}_{label}_rank{rank}")
-                mol_out.SetProp("rank", str(rank))
-                mol_out.SetProp("boltzmann_weight", f"{w:.6f}")
-                mol_out.SetProp("energy_hartree", f"{eng:.8f}")
-                writer.write(mol_out)
-            writer.close()
-        except Exception as _e:
-            print(f"      ⚠ SDF write failed: {_e}")
-            out_sdf = None
-
-    return out_xyz, out_sdf
+    out_path.write_text("\n".join(lines) + "\n")
+    return out_path
 
 
 def boltzmann_weights(energies_hartree: list[float], T: float = 298.15) -> np.ndarray:
@@ -674,12 +646,10 @@ def process_compound(cpd: dict, work_base: Path,
 
         # Save top-N conformers for downstream QM / docking / MD input
         if top_confs > 0 and outdir is not None:
-            xyz_out, sdf_out = save_top_conformers(
-                conformers, weights, label, short, outdir,
-                top_n=top_confs, template_mol=_template_mol,
+            xyz_out = save_top_conformers(
+                conformers, weights, label, short, outdir, top_n=top_confs,
             )
-            print(f"      Saved top-{top_confs} conformers → {xyz_out.name}"
-                  + (f", {sdf_out.name}" if sdf_out else ""))
+            print(f"      Saved top-{top_confs} conformers → {xyz_out.name}")
 
     # ── Compute Δ features ────────────────────────────────────────────────────
     if "aq_psa_boltz" in result and "mem_psa_boltz" in result:

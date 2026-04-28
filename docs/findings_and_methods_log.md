@@ -387,14 +387,72 @@ On the 2,435-compound overlap subset, no ΔPSA variant achieves AUC > 0.51. The 
 
 ---
 
+---
+
+## 2026-04-21 to 2026-04-23 — Boltzmann Weighting, Canonical SMILES Join, Feature Benchmark Script
+
+### Boltzmann weighting added to tier2_crest.py (commit 6c9f596)
+
+The original `process_compound` function used the single lowest-energy conformer PSA as the membrane/aqueous representative. Replaced with Boltzmann-weighted mean PSA across all conformers (up to `max_confs=500`).
+
+**Why:** GFN2-xTB Boltzmann populations are qualitatively correct for conformer ensembles of cyclic peptides without DFT refinement. Validated by Ketzel et al. 2025 (Heterophyllin B, cyclic octapeptide): CREST GFN2-xTB correctly identified both NMR-visible conformers; CENSO DFT changed energy ordering but not which conformers dominated. The weighted mean is thermodynamically defensible and matches CREMP methodology; single lowest-energy conformer is an approximation that ignores the ensemble distribution.
+
+**Implementation:**
+- `parse_xyz_ensemble` updated to return `(symbols, coords, energy_hartree)` triples; energy parsed from XYZ comment line (CREST writes `energy: -X.XXXX Ha` in the comment).
+- `boltzmann_weights(energies_hartree, T=298.15)`: converts to kcal/mol, subtracts minimum (numerical stability), returns normalized Boltzmann weights. If all energies are degenerate (single-conformer compounds), returns uniform weights.
+- ΔPSA now computed as `aq_psa_boltz − mem_psa_boltz`. The `psa_lowen` (single lowest-energy) values are still written as `*_psa_lowen` columns for cross-validation.
+- RT = 1.987e-3 × 298.15 = 0.5923 kcal/mol.
+
+### Canonical SMILES join fix in feature_benchmark.py (commit b7705e7)
+
+Raw SMILES string join between CREMP and feature_matrix was missing compounds that had equivalent but non-identical SMILES representations. Fixed by canonicalizing all SMILES through RDKit before the inner join. Deduplication on `canon_smiles`. Overlap increased from 2,416 to enriched set; exact count depends on source CSVs.
+
+### Feature benchmark script and SLURM job (commit 1eca746)
+
+`scripts/feature_benchmark.py`: computes F1–F7 feature sets (Morgan bit/count at multiple radii, MAPC, Mordred 2D/3D, CREST CHCl3) across CREMP permeability compounds (n≈3,258). Outputs `results/feature_benchmark_results.csv` (gitignored — generated artifact). Source: `results/feature_matrix_cremp_overlap.csv`.
+
+`scripts/benchmark_slurm.sh`: SLURM batch script for Jinich cluster. 8 CPUs / 32 GB / 2h. Activates `chameleon` env, runs benchmark.
+
+`dependencies/tabpfn_env.yml`: separate conda environment for TabPFN (numpy<2 constraint required on Windows with PyTorch 2.3.1).
+
+### Heterophyllin B (Ketzel et al. 2025) — methodology cross-check
+
+Yang Hu is co-author. Cyclic octapeptide conformational analysis: CREST (GFN-FF + GFN2-xTB, 6 kcal/mol window) → CENSO → 2-conformer ensemble validated by RDC/NOE/J-coupling. This paper validates the core computational approach of the CREST pipeline for cyclic peptides. Key finding for our pipeline: GFN2-xTB Boltzmann weights correctly rank conformers without DFT. CENSO is necessary for NMR structure determination but not for population-level permeability prediction. CENSO deferred from our pipeline.
+
+### New experiment file added
+
+`docs/experiments/2026-04-22_macrocycle_target_family_screening.md`: full design for CREST → CENSO (optional) → ensemble docking → MD → SEEKR target-family screening workflow. Designed as first-pass triage for macrocyclic hits without known targets.
+
+---
+
 ## Open Questions and Next Steps (Chameleon_Predictor)
 
-1. **Normalized ΔPSA**: Yu et al. 2026 (bioRxiv, DOI: 10.64898/2026.01.06.697862) use ΔPSA/SASA_total — a dimensionless fractional switching ratio that removes MW confounding. Combined with a ≥9 residue size filter (below which chameleonic behavior does not manifest reliably per Yu 2026), this is the most promising path to recovering signal on a clean dataset.
+### Immediate (gating compute decisions)
 
-2. **Source-stratified PAMPA**: Rerun on Furukawa 2016 only (individual LC-MS, cleanest source) to test whether AUC recovers when cross-source label noise is eliminated.
+1. **Run feature benchmark on cluster**: `git pull && sbatch scripts/benchmark_slurm.sh` on Jinich cluster. Results gate all future compute choices — if CREST >> ETKDG3D, aqueous CREST is high priority; if not, deprioritize simulation.
 
-3. **Random forest + SHAP**: Replace single-descriptor AUC with a multi-feature model to capture nonlinear interactions between ΔPSA, psa3d_std, delta_hb, and delta_Rg.
+2. **Submit tier2 CREST jobs**: Once Ricardo (senior grad student) signs off on reference compound set and parameters. Send him: repo link + reference compound table from `docs/session_2026-04-23.md` + `docs/experiments/2026-04-09_feature_benchmark_design.md`.
 
-4. **NMR calibration set**: Omphalotin A (PDB 8QAQ/8QAS, Rüdisser 2023), Ono 2019 hexapeptide diastereomers, and CsH (negative control) as a multi-compound NMR-anchored validation set.
+3. **Install tabpfn_env locally**: `conda env create -f dependencies/tabpfn_env.yml` — needed for local benchmark runs.
 
-5. **Caco-2 efflux analysis**: 256 compounds with both Tier-1 data and Caco-2 values show inverted correlation (rho = -0.404) — large chameleonic molecules fail Caco-2 due to P-gp efflux, not poor passive permeability. Disentangling passive vs. efflux-limited transport requires both assays on the same compounds.
+4. **Navia email**: Draft saved at `docs/navia_email_draft.md`. Check with Dr. Hu / Dr. Jinich for warm introduction before sending cold.
+
+### Science
+
+5. **Normalized ΔPSA**: Yu et al. 2026 (bioRxiv, DOI: 10.64898/2026.01.06.697862) use ΔPSA/SASA_total — dimensionless fractional switching ratio that removes MW confounding. Combined with ≥9 residue size filter, most promising path to recovering signal on clean dataset.
+
+6. **Source-stratified PAMPA**: Rerun on Furukawa 2016 only (individual LC-MS, cleanest source) to test whether AUC recovers when cross-source noise is eliminated.
+
+7. **Random forest + SHAP**: Replace single-descriptor AUC with multi-feature model to capture nonlinear interactions (ΔPSA, psa3d_std, delta_hb, delta_Rg).
+
+8. **NMR calibration set**: Omphalotin A (PDB 8QAQ/8QAS), Ono 2019 hexapeptide diastereomers, CsH (negative control) as multi-compound NMR-anchored validation.
+
+9. **Caco-2 efflux**: 256 compounds with Tier-1 data + Caco-2 show inverted correlation (rho = -0.404) — large chameleonic molecules fail Caco-2 via P-gp efflux, not passive permeability failure. Requires both assays.
+
+### Future / deferred
+
+10. **Literature README**: Add `literature/README.md` listing all referenced PDFs with DOIs — portable, commitable, allows anyone to re-download. PDFs themselves stay gitignored. (Low priority — do after benchmark results are in.)
+
+11. **APBS**: More rigorous electrostatic surface potential vs. geometric PSA. Available on campus DataHub. Deferred because it answers a different question and breaks CREMP comparability. Revisit if geometric PSA proves insufficiently sensitive.
+
+12. **Macrocycle target-family screening workflow**: Full design in `docs/experiments/2026-04-22_macrocycle_target_family_screening.md`. Requires CENSO access (TURBOMOLE/ORCA) and docking engine setup. Post-permeability-benchmark priority.

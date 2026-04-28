@@ -43,7 +43,7 @@ from pathlib import Path
 # ── Configuration — edit these for the cluster ────────────────────────────────
 PARTITION   = "all"               # SLURM partition (run `sinfo` to list available)
 CONDA_ENV   = "chameleon"         # conda environment with crest + xtb + rdkit
-CONDA_SH    = "~/miniconda3/etc/profile.d/conda.sh"  # adjust if miniforge3
+CONDA_SH    = "~/miniconda3/etc/profile.d/conda.sh"
 CPUS        = 20                  # CPUs per compound job (= --threads passed to CREST)
 MEM         = "16G"               # RAM per job
 TIME        = None                # Wall-time limit per compound — None = no limit (cluster default)

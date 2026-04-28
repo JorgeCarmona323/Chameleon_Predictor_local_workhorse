@@ -186,9 +186,7 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
         "crest", str(xyz_path),
         "--alpb", solvent,
         "--T", str(max(1, os.cpu_count() - 1)),
-        "--quick",           # faster sampling — use --noreftopo for macrocycles
         "--keepdir",
-        "--mquick",          # macrocycle-aware quick mode
     ]
     if charge != 0:
         cmd += ["--chrg", str(charge)]
@@ -713,9 +711,7 @@ def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
                 "crest", str(xyz_path),
                 "--alpb", solvent,
                 "--T", str(_nt),
-                "--quick",
                 "--keepdir",
-                "--mquick",
             ]
             if charge != 0:
                 cmd += ["--chrg", str(charge)]

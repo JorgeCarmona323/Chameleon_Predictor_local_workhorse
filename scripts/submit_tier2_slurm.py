@@ -1,8 +1,10 @@
 """
 submit_tier2_slurm.py
 ---------------------
-Submits 5 independent SLURM jobs for tier2_crest.py (one per reference compound),
-then queues a merge job that runs automatically after all 5 complete.
+Submits 5 independent SLURM jobs for tier2_crest.py (one per reference compound).
+Each job runs water then CHCl3 CREST sequentially and writes its own CSV.
+After all 5 complete, run the merge step locally:
+  python scripts/tier2_crest.py --merge --outdir results
 
 Reference compounds (indexed 0–4):
   0 — Hexapeptide  (impermeable,  6-mer,  HBD=6)
@@ -15,19 +17,19 @@ Usage:
   # Dry run — preview the SLURM scripts without submitting
   python scripts/submit_tier2_slurm.py --dry-run
 
-  # Submit all 5 jobs + merge
+  # Submit all 5 jobs
   python scripts/submit_tier2_slurm.py
 
   # Submit only specific compounds (e.g. re-run failed jobs)
   python scripts/submit_tier2_slurm.py --compounds 2 4
 
   # Custom resource settings
-  python scripts/submit_tier2_slurm.py --cpus 16 --mem 32G --time 12:00:00
+  python scripts/submit_tier2_slurm.py --cpus 20 --mem 32G
 
 Requirements on the cluster:
   - conda environment with crest, xtb, rdkit installed (set CONDA_ENV below)
   - This repo cloned to the same relative path on the cluster
-  - feature_matrix.csv in results/ (needed for DP-172 and PSLYF SMILES)
+  - feature_matrix.csv in results/ (needed for PSLYF SMILES)
 
 Author: Jorge Carmona, Chameleon_Predictor project
 """
@@ -108,34 +110,6 @@ def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
     """)
 
 
-def build_merge_script(job_ids: list[int], repo_root: str) -> str:
-    """
-    Return a SLURM batch script that merges per-compound CSVs.
-    Depends on all 5 compound jobs via afterok: only runs if all succeed.
-    """
-    dep = ":".join(str(j) for j in job_ids)
-    return textwrap.dedent(f"""\
-        #!/bin/bash
-        #SBATCH --job-name=crest_merge
-        #SBATCH --partition={PARTITION}
-        #SBATCH --cpus-per-task=1
-        #SBATCH --mem=4G
-        #SBATCH --time=00:10:00
-        #SBATCH --dependency=afterok:{dep}
-        #SBATCH --output={LOGS_DIR}/crest_merge_%j.out
-        #SBATCH --error={LOGS_DIR}/crest_merge_%j.err
-
-        source "${{HOME}}/{CONDA_SH.lstrip('~/')}"
-        conda activate {CONDA_ENV}
-
-        cd {repo_root}
-
-        echo "Merging per-compound results..."
-        python {SCRIPT_PATH} --merge --outdir {OUTDIR}
-
-        echo "Done: $(date)"
-    """)
-
 
 def submit_script(script_text: str, dry_run: bool) -> int | None:
     """
@@ -205,10 +179,6 @@ def parse_args() -> argparse.Namespace:
              "Defaults to the parent of this script's directory.",
     )
     p.add_argument(
-        "--no-merge", action="store_true",
-        help="Skip submitting the merge job (submit compounds only).",
-    )
-    p.add_argument(
         "--dry-run", action="store_true",
         help="Print SLURM scripts without submitting.",
     )
@@ -218,18 +188,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    # Determine repo root
     if args.repo_root:
         repo_root = args.repo_root
     else:
-        # Resolve relative to this script
         repo_root = str(Path(__file__).resolve().parent.parent)
 
-    # Create log directory (if running locally before pushing; safe to re-run)
     logs = Path(repo_root) / LOGS_DIR
     logs.mkdir(parents=True, exist_ok=True)
 
-    # Which compounds to run
     indices = args.compounds if args.compounds is not None else [c["idx"] for c in COMPOUNDS]
     selected = [c for c in COMPOUNDS if c["idx"] in indices]
 
@@ -243,7 +209,6 @@ def main() -> None:
         print(f"  [{c['idx']}] {c['name']:30s}  ({label})")
     print()
 
-    job_ids = []
     for cpd in selected:
         script = build_crest_script(
             cpd, args.cpus, args.mem, args.time_limit, repo_root
@@ -255,37 +220,12 @@ def main() -> None:
         job_id = submit_script(script, args.dry_run)
         if job_id is not None:
             print(f"  Submitted compound {cpd['idx']} ({cpd['short']}): job {job_id}")
-            job_ids.append(job_id)
-
-    # Merge job — only if all 5 compounds were submitted
-    all_five_submitted = (not args.no_merge and
-                          not args.dry_run and
-                          set(indices) == {0, 1, 2, 3, 4})
-
-    if args.dry_run and not args.no_merge and set(indices) == {0, 1, 2, 3, 4}:
-        print(f"\n{'─'*60}")
-        print("  SCRIPT for merge job (dependency: afterok:JOB1:JOB2:JOB3:JOB4:JOB5)")
-        print(f"{'─'*60}")
-        submit_script(build_merge_script([0, 0, 0, 0, 0], repo_root), dry_run=True)
-
-    elif all_five_submitted and len(job_ids) == 5:
-        merge_script = build_merge_script(job_ids, repo_root)
-        merge_id = submit_script(merge_script, dry_run=False)
-        if merge_id is not None:
-            dep_str = ":".join(str(j) for j in job_ids)
-            print(f"\n  Submitted merge job: {merge_id}  (depends on {dep_str})")
-
-    elif not args.no_merge and not args.dry_run and set(indices) != {0, 1, 2, 3, 4}:
-        print(
-            "\nNote: merge job not submitted — only a subset of compounds was run.\n"
-            "Run manually after all 5 complete:\n"
-            f"  python {SCRIPT_PATH} --merge --outdir {OUTDIR}"
-        )
 
     if not args.dry_run:
         print(f"\nMonitor with:  squeue -u $USER")
         print(f"Check logs in: {LOGS_DIR}/")
-        print(f"After merge:   cat {OUTDIR}/tier2_crest_table.csv")
+        print(f"\nAfter all 5 complete, pull results and run locally:")
+        print(f"  python {SCRIPT_PATH} --merge --outdir {OUTDIR}")
 
 
 if __name__ == "__main__":

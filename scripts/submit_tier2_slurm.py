@@ -184,7 +184,33 @@ def parse_args() -> argparse.Namespace:
         "--dry-run", action="store_true",
         help="Print SLURM scripts without submitting.",
     )
+    p.add_argument(
+        "--test-slurm", action="store_true",
+        help="Submit a minimal SLURM job that runs CREST directly (no Python) "
+             "to verify CREST works in the SLURM environment.",
+    )
     return p.parse_args()
+
+
+def build_test_script(repo_root: str) -> str:
+    xyz = f"{repo_root}/results/crest_runs/HexPep/HexPep_start.xyz"
+    return (
+        "#!/bin/bash\n"
+        f"#SBATCH --job-name=test_crest\n"
+        f"#SBATCH --partition={PARTITION}\n"
+        "#SBATCH --cpus-per-task=1\n"
+        "#SBATCH --mem=4G\n"
+        f"#SBATCH --output={repo_root}/test_crest_%j.out\n"
+        f"#SBATCH --error={repo_root}/test_crest_%j.err\n"
+        f'source "${{HOME}}/{CONDA_SH.lstrip("~/")}" \n'
+        f"conda activate {CONDA_ENV}\n"
+        "echo \"=== ENV ===\"\n"
+        "which crest\n"
+        "which xtb\n"
+        "echo \"PWD=$PWD\"\n"
+        f"cd {repo_root}\n"
+        f"crest {xyz} --alpb water --T 1 --noreftopo --keepdir\n"
+    )
 
 
 def main() -> None:
@@ -194,6 +220,13 @@ def main() -> None:
         repo_root = args.repo_root
     else:
         repo_root = str(Path(__file__).resolve().parent.parent)
+
+    if args.test_slurm:
+        script = build_test_script(repo_root)
+        job_id = submit_script(script, dry_run=False)
+        print(f"Submitted test job: {job_id}")
+        print(f"Watch: tail -f {repo_root}/test_crest_{job_id}.out")
+        return
 
     # Timestamped log directory — one folder per submission
     run_ts  = datetime.now().strftime("%Y%m%d_%H%M%S")

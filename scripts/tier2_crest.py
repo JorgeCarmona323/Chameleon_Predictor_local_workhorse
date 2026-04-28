@@ -183,7 +183,7 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
     work_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        "crest", str(xyz_path),
+        "crest", str(xyz_path.resolve()),
         "--alpb", solvent,
         "--T", str(max(1, os.cpu_count() - 1)),
         "--keepdir",
@@ -708,7 +708,7 @@ def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
         def _threaded_run_crest(xyz_path, work_dir, solvent, max_confs=200, charge=0):
             work_dir.mkdir(parents=True, exist_ok=True)
             cmd = [
-                "crest", str(xyz_path),
+                "crest", str(xyz_path.resolve()),
                 "--alpb", solvent,
                 "--T", str(_nt),
                 "--keepdir",

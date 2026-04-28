@@ -38,6 +38,7 @@ import argparse
 import subprocess
 import sys
 import textwrap
+from datetime import datetime
 from pathlib import Path
 
 # ── Configuration — edit these for the cluster ────────────────────────────────
@@ -52,7 +53,7 @@ TIME        = None                # Wall-time limit per compound — None = no l
 SCRIPT_PATH = "scripts/tier2_crest.py"
 OUTDIR      = "results"
 MATRIX_CSV  = "results/feature_matrix.csv"
-LOGS_DIR    = "results/slurm_logs"
+LOGS_BASE   = "results/slurm_logs"
 
 # ── Compound metadata (mirrors REFERENCE_COMPOUNDS in tier2_crest.py) ─────────
 COMPOUNDS = [
@@ -65,11 +66,12 @@ COMPOUNDS = [
 
 
 def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
-                       repo_root: str) -> str:
+                       repo_root: str, logs_dir: str) -> str:
     """
     Return a SLURM batch script string for one compound.
     repo_root: absolute path to the Chameleon_Predictor directory on the cluster.
     time_limit: HH:MM:SS string or None (omit --time, use partition default).
+    logs_dir: timestamped subdirectory for this submission's logs.
     """
     idx   = cpd["idx"]
     short = cpd["short"]
@@ -82,8 +84,8 @@ def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
         #SBATCH --partition={PARTITION}
         #SBATCH --cpus-per-task={cpus}
         #SBATCH --mem={mem}
-        {time_line}#SBATCH --output={LOGS_DIR}/crest_{idx}_{short}_%j.out
-        #SBATCH --error={LOGS_DIR}/crest_{idx}_{short}_%j.err
+        {time_line}#SBATCH --output={logs_dir}/crest_{idx}_{short}_%j.out
+        #SBATCH --error={logs_dir}/crest_{idx}_{short}_%j.err
 
         # ── Environment ──────────────────────────────────────────────────────
         source "${{HOME}}/{CONDA_SH.lstrip('~/')}"
@@ -193,8 +195,10 @@ def main() -> None:
     else:
         repo_root = str(Path(__file__).resolve().parent.parent)
 
-    logs = Path(repo_root) / LOGS_DIR
-    logs.mkdir(parents=True, exist_ok=True)
+    # Timestamped log directory — one folder per submission
+    run_ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+    logs_dir = f"{LOGS_BASE}/run_{run_ts}"
+    Path(repo_root, logs_dir).mkdir(parents=True, exist_ok=True)
 
     indices = args.compounds if args.compounds is not None else [c["idx"] for c in COMPOUNDS]
     selected = [c for c in COMPOUNDS if c["idx"] in indices]
@@ -207,11 +211,11 @@ def main() -> None:
     for c in selected:
         label = "permeable" if c["permeable"] else "impermeable"
         print(f"  [{c['idx']}] {c['name']:30s}  ({label})")
-    print()
+    print(f"  Logs → {logs_dir}/\n")
 
     for cpd in selected:
         script = build_crest_script(
-            cpd, args.cpus, args.mem, args.time_limit, repo_root
+            cpd, args.cpus, args.mem, args.time_limit, repo_root, logs_dir
         )
         if args.dry_run:
             print(f"{'─'*60}")
@@ -223,7 +227,7 @@ def main() -> None:
 
     if not args.dry_run:
         print(f"\nMonitor with:  squeue -u $USER")
-        print(f"Check logs in: {LOGS_DIR}/")
+        print(f"Check logs in: {logs_dir}/")
         print(f"\nAfter all 5 complete, pull results and run locally:")
         print(f"  python {SCRIPT_PATH} --merge --outdir {OUTDIR}")
 

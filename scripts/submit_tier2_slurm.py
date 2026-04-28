@@ -42,10 +42,9 @@ from pathlib import Path
 PARTITION   = "all"               # SLURM partition (run `sinfo` to list available)
 CONDA_ENV   = "chameleon"         # conda environment with crest + xtb + rdkit
 CONDA_SH    = "~/miniconda3/etc/profile.d/conda.sh"  # adjust if miniforge3
-CPUS        = 8                   # CPUs per compound job (= --threads passed to CREST)
+CPUS        = 20                  # CPUs per compound job (= --threads passed to CREST)
 MEM         = "16G"               # RAM per job
-TIME        = "08:00:00"          # Wall-time limit per compound (HH:MM:SS)
-# CsA (11-mer) is the most complex — if 8h is not enough, increase only for job 2
+TIME        = None                # Wall-time limit per compound — None = no limit (cluster default)
 
 # Paths — relative to repo root on the cluster
 SCRIPT_PATH = "scripts/tier2_crest.py"
@@ -63,15 +62,17 @@ COMPOUNDS = [
 ]
 
 
-def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str,
+def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
                        repo_root: str) -> str:
     """
     Return a SLURM batch script string for one compound.
     repo_root: absolute path to the Chameleon_Predictor directory on the cluster.
+    time_limit: HH:MM:SS string or None (omit --time, use partition default).
     """
     idx   = cpd["idx"]
     short = cpd["short"]
     name  = cpd["name"]
+    time_line = f"#SBATCH --time={time_limit}\n        " if time_limit else ""
 
     return textwrap.dedent(f"""\
         #!/bin/bash
@@ -79,8 +80,7 @@ def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str,
         #SBATCH --partition={PARTITION}
         #SBATCH --cpus-per-task={cpus}
         #SBATCH --mem={mem}
-        #SBATCH --time={time_limit}
-        #SBATCH --output={LOGS_DIR}/crest_{idx}_{short}_%j.out
+        {time_line}#SBATCH --output={LOGS_DIR}/crest_{idx}_{short}_%j.out
         #SBATCH --error={LOGS_DIR}/crest_{idx}_{short}_%j.err
 
         # ── Environment ──────────────────────────────────────────────────────
@@ -196,8 +196,8 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--time", default=TIME, dest="time_limit",
-        help=f"Wall-time per job, HH:MM:SS (default: {TIME}). "
-             "CsA (idx=2) is slowest — 8h is conservative.",
+        help="Wall-time per job, HH:MM:SS (default: no limit — uses partition default). "
+             "Pass e.g. --time 12:00:00 to impose a cap.",
     )
     p.add_argument(
         "--repo-root", default=None,

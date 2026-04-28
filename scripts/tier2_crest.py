@@ -258,31 +258,59 @@ def save_top_conformers(
     compound_short: str,
     outdir: Path,
     top_n: int = 10,
-) -> Path:
+    template_mol=None,
+) -> tuple[Path, Path | None]:
     """
-    Save top-N Boltzmann-weighted conformers as a multi-conformer XYZ file.
+    Save top-N Boltzmann-weighted conformers as XYZ and (if template_mol provided) SDF.
 
-    Conformers are sorted by weight (highest first). Comment line encodes rank,
-    weight, and GFN2-xTB energy so the file can be used directly as input to
-    xTB, ORCA, CREST restart, or converted to SDF for docking.
+    Conformers are sorted by Boltzmann weight (highest first). Comment line encodes
+    rank, weight, and GFN2-xTB energy. SDF properties include the same metadata
+    for use in docking pipelines.
 
-    Output: results/conformers/{compound_short}/{label}/top{N}_boltzmann.xyz
+    Returns: (xyz_path, sdf_path or None)
+    Output:  results/conformers/{compound_short}/{label}/top{N}_boltzmann.{xyz,sdf}
     """
     ranked = sorted(zip(weights, conformers), key=lambda x: -x[0])[:top_n]
 
     conf_dir = outdir / "conformers" / compound_short / label
     conf_dir.mkdir(parents=True, exist_ok=True)
-    out_path = conf_dir / f"top{top_n}_boltzmann.xyz"
 
+    # ── XYZ ──────────────────────────────────────────────────────────────────
+    out_xyz = conf_dir / f"top{top_n}_boltzmann.xyz"
     lines = []
     for rank, (w, (syms, crds, eng)) in enumerate(ranked, start=1):
         lines.append(str(len(syms)))
         lines.append(f"rank={rank} weight={w:.6f} energy={eng:.8f}")
         for sym, (x, y, z) in zip(syms, crds):
             lines.append(f"{sym}  {x:.6f}  {y:.6f}  {z:.6f}")
+    out_xyz.write_text("\n".join(lines) + "\n")
 
-    out_path.write_text("\n".join(lines) + "\n")
-    return out_path
+    # ── SDF (requires template mol with connectivity) ─────────────────────────
+    out_sdf = None
+    if template_mol is not None:
+        try:
+            from rdkit import Chem
+            out_sdf = conf_dir / f"top{top_n}_boltzmann.sdf"
+            writer = Chem.SDWriter(str(out_sdf))
+            for rank, (w, (syms, crds, eng)) in enumerate(ranked, start=1):
+                mol_copy = Chem.RWMol(Chem.Mol(template_mol))
+                mol_copy.RemoveAllConformers()
+                conf = Chem.Conformer(mol_copy.GetNumAtoms())
+                for i, (x, y, z) in enumerate(crds):
+                    conf.SetAtomPosition(i, (float(x), float(y), float(z)))
+                mol_copy.AddConformer(conf, assignId=True)
+                mol_out = mol_copy.GetMol()
+                mol_out.SetProp("_Name", f"{compound_short}_{label}_rank{rank}")
+                mol_out.SetProp("rank", str(rank))
+                mol_out.SetProp("boltzmann_weight", f"{w:.6f}")
+                mol_out.SetProp("energy_hartree", f"{eng:.8f}")
+                writer.write(mol_out)
+            writer.close()
+        except Exception as _e:
+            print(f"      ⚠ SDF write failed: {_e}")
+            out_sdf = None
+
+    return out_xyz, out_sdf
 
 
 def boltzmann_weights(energies_hartree: list[float], T: float = 298.15) -> np.ndarray:
@@ -481,7 +509,8 @@ def count_hbonds_xyz(symbols: list[str], coords: np.ndarray) -> int:
 # ── Process one compound ──────────────────────────────────────────────────────
 def process_compound(cpd: dict, work_base: Path,
                      max_confs: int, dry_run: bool,
-                     top_confs: int = 10, outdir: Path | None = None) -> dict:
+                     top_confs: int = 10, outdir: Path | None = None,
+                     restart: bool = False) -> dict:
     name  = cpd["name"]
     short = cpd["short"]
     smi   = cpd["smiles"]
@@ -562,30 +591,47 @@ def process_compound(cpd: dict, work_base: Path,
             print(f"      [DRY RUN] PSA_low-energy={result[f'{label}_psa_lowen']:.1f}")
             continue
 
-        # Run CREST
-        try:
-            ensemble_xyz = run_crest(xyz_in, sol_dir, solvent, max_confs)
-        except subprocess.TimeoutExpired:
-            print(f"      ⚠ CREST timed out after 2 hours")
-            ensemble_xyz = None
-        except Exception as e:
-            print(f"      ⚠ CREST error: {e}")
-            ensemble_xyz = None
+        # Full ensemble save path — used for restart and cap extension
+        saved_ens_path = (
+            outdir / "conformers" / short / label / "full_ensemble.xyz"
+            if outdir is not None else None
+        )
+
+        # Run CREST or reload saved ensemble
+        if restart and saved_ens_path is not None and saved_ens_path.exists():
+            print(f"      [RESTART] Loading saved ensemble: {saved_ens_path}")
+            ensemble_xyz = saved_ens_path
+        else:
+            try:
+                ensemble_xyz = run_crest(xyz_in, sol_dir, solvent, max_confs)
+            except subprocess.TimeoutExpired:
+                print(f"      ⚠ CREST timed out")
+                ensemble_xyz = None
+            except Exception as e:
+                print(f"      ⚠ CREST error: {e}")
+                ensemble_xyz = None
 
         if ensemble_xyz is None:
             print(f"      ⚠ CREST failed — no ensemble produced")
             continue
 
-        # Parse ensemble — returns (symbols, coords, energy_hartree) tuples
+        # Parse full ensemble before applying cap
         conformers = parse_xyz_ensemble(ensemble_xyz)
-        n_confs = len(conformers)
-        print(f"      Parsed {n_confs} conformers from ensemble")
+        n_confs_full = len(conformers)
+        print(f"      Parsed {n_confs_full} conformers from ensemble")
 
-        if n_confs == 0:
+        # Save full ensemble for later restart / cap extension
+        if saved_ens_path is not None and not restart:
+            saved_ens_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ensemble_xyz, saved_ens_path)
+            print(f"      Full ensemble saved → {saved_ens_path.name} ({n_confs_full} conformers)")
+
+        if n_confs_full == 0:
             continue
 
         # Trim to max_confs and compute PSA / H-bonds per conformer
         conformers = conformers[:max_confs]
+        n_confs = len(conformers)
         psa_vals, hb_vals, energies = [], [], []
         for syms, crds, eng in conformers:
             psa_vals.append(compute_psa_xyz(syms, crds, template_mol=_template_mol))
@@ -615,19 +661,25 @@ def process_compound(cpd: dict, work_base: Path,
         result[f"{label}_hb_min"]     = int(hb_arr.min())
         result[f"{label}_hb_max"]     = int(hb_arr.max())
         result[f"{label}_hb_mean"]    = round(float(hb_arr.mean()), 2)
-        result[f"{label}_n_confs"]    = n_confs
+        result[f"{label}_n_confs"]      = n_confs
+        result[f"{label}_n_confs_full"] = n_confs_full
 
         print(f"      PSA (Boltzmann-wtd): {psa_boltz:.1f} Å²  "
               f"(low-energy={psa_lowen:.1f}, mean={psa_arr.mean():.1f})")
         print(f"      HB  (Boltzmann-wtd): {hb_boltz:.2f}  "
               f"(low-energy={int(hb_lowen)})")
+        if n_confs_full > n_confs:
+            print(f"      ⚠ Cap applied: using {n_confs}/{n_confs_full} conformers "
+                  f"(raise --max-confs or use --restart to extend)")
 
         # Save top-N conformers for downstream QM / docking / MD input
         if top_confs > 0 and outdir is not None:
-            xyz_out = save_top_conformers(
-                conformers, weights, label, short, outdir, top_n=top_confs
+            xyz_out, sdf_out = save_top_conformers(
+                conformers, weights, label, short, outdir,
+                top_n=top_confs, template_mol=_template_mol,
             )
-            print(f"      Saved top-{top_confs} conformers → {xyz_out}")
+            print(f"      Saved top-{top_confs} conformers → {xyz_out.name}"
+                  + (f", {sdf_out.name}" if sdf_out else ""))
 
     # ── Compute Δ features ────────────────────────────────────────────────────
     if "aq_psa_boltz" in result and "mem_psa_boltz" in result:
@@ -646,7 +698,7 @@ def process_compound(cpd: dict, work_base: Path,
 # ── Main ──────────────────────────────────────────────────────────────────────
 def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
         compound_idx: int | None = None, n_threads: int | None = None,
-        top_confs: int = 10) -> None:
+        top_confs: int = 10, restart: bool = False) -> None:
     """
     Run Tier-2 CREST validation.
 
@@ -734,7 +786,8 @@ def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
     try:
         for cpd in compounds_to_run:
             r = process_compound(cpd, work_base, max_confs, dry_run,
-                                 top_confs=top_confs, outdir=outdir)
+                                 top_confs=top_confs, outdir=outdir,
+                                 restart=restart)
             results.append(r)
     finally:
         # Restore original run_crest if it was monkey-patched
@@ -836,6 +889,10 @@ Compound index reference:
                              "Set to 0 to disable. (default: 10)")
     parser.add_argument("--merge",     action="store_true",
                         help="Merge per-compound CSVs after parallel jobs complete.")
+    parser.add_argument("--restart",   action="store_true",
+                        help="Reload saved full_ensemble.xyz instead of re-running CREST. "
+                             "Use to extend analysis with a higher --max-confs cap without "
+                             "re-running the conformer search.")
     return parser.parse_args()
 
 
@@ -847,4 +904,4 @@ if __name__ == "__main__":
         run(args.matrix, Path(args.outdir),
             max_confs=args.max_confs, dry_run=args.dry_run,
             compound_idx=args.compound, n_threads=args.threads,
-            top_confs=args.top_confs)
+            top_confs=args.top_confs, restart=args.restart)

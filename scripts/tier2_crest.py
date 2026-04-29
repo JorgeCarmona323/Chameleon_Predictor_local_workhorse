@@ -436,39 +436,6 @@ def parse_xyz_ensemble(xyz_path: Path) -> list[tuple[list[str], np.ndarray, floa
     return conformers
 
 
-def save_top_conformers(
-    conformers: list[tuple[list[str], np.ndarray, float]],
-    weights: np.ndarray,
-    label: str,
-    compound_short: str,
-    outdir: Path,
-    top_n: int = 10,
-) -> Path:
-    """
-    Save top-N Boltzmann-weighted conformers as a multi-conformer XYZ file.
-
-    Conformers are sorted by weight (highest first). Comment line encodes rank,
-    weight, and GFN2-xTB energy so the file can be used directly as input to
-    xTB, ORCA, or docking pipelines.
-
-    Output: results/conformers/{compound_short}/{label}/top{N}_boltzmann.xyz
-    """
-    ranked = sorted(zip(weights, conformers), key=lambda x: -x[0])[:top_n]
-
-    conf_dir = outdir / "conformers" / compound_short / label
-    conf_dir.mkdir(parents=True, exist_ok=True)
-    out_path = conf_dir / f"top{top_n}_boltzmann.xyz"
-
-    lines = []
-    for rank, (w, (syms, crds, eng)) in enumerate(ranked, start=1):
-        lines.append(str(len(syms)))
-        lines.append(f"rank={rank} weight={w:.6f} energy={eng:.8f}")
-        for sym, (x, y, z) in zip(syms, crds):
-            lines.append(f"{sym}  {x:.6f}  {y:.6f}  {z:.6f}")
-
-    out_path.write_text("\n".join(lines) + "\n")
-    return out_path
-
 
 def boltzmann_weights(energies_hartree: list[float], T: float = 298.15) -> np.ndarray:
     """
@@ -641,7 +608,7 @@ def count_hbonds_xyz(symbols: list[str], coords: np.ndarray) -> int:
 # ── Process one compound ──────────────────────────────────────────────────────
 def process_compound(cpd: dict, work_base: Path,
                      max_confs: int, dry_run: bool, n_threads: int,
-                     top_confs: int = 10, outdir: Path | None = None,
+                     outdir: Path | None = None,
                      restart: bool = False) -> dict:
     from rdkit import Chem
 
@@ -650,18 +617,13 @@ def process_compound(cpd: dict, work_base: Path,
     smi   = cpd["smiles"]
 
     print(f"\n{'─'*60}")
-    print(f"  {name}  (ID={cpd['cycpeptmpdb_id']})")
-    print(f"  Source: {cpd['source']}")
-    print(f"  PAMPA: {cpd['pampa']}  |  HBD: {cpd['hbd']}  |  DB ΔPSA: {cpd['db_delta_psa']}")
+    print(f"  {name}  (ID={cpd['cycpeptmpdb_id']})  PAMPA={cpd['pampa']}")
 
     result = {
-        "compound": name,
-        "cycpeptmpdb_id": cpd["cycpeptmpdb_id"],
-        "pampa": cpd["pampa"],
-        "permeable": cpd["permeable"],
-        "hbd": cpd["hbd"],
-        "db_delta_psa": cpd["db_delta_psa"],
-        "source": cpd["source"],
+        "compound":        name,
+        "cycpeptmpdb_id":  cpd["cycpeptmpdb_id"],
+        "pampa":           cpd["pampa"],
+        "permeable":       cpd["permeable"],
     }
 
     if smi is None:
@@ -815,12 +777,6 @@ def process_compound(cpd: dict, work_base: Path,
             print(f"      ⚠ Cap applied: using {n_confs}/{n_confs_full} conformers "
                   f"(raise --max-confs or use --restart to extend)")
 
-        if top_confs > 0 and outdir is not None:
-            xyz_out = save_top_conformers(
-                conformers, weights, label, short, outdir, top_n=top_confs,
-            )
-            print(f"      Saved top-{top_confs} conformers → {xyz_out.name}")
-
     # ── Compute Δ features ────────────────────────────────────────────────────
     if "aq_psa_boltz" in result and "mem_psa_boltz" in result:
         result["crest_delta_psa"]       = round(result["aq_psa_boltz"] - result["mem_psa_boltz"], 2)
@@ -838,94 +794,35 @@ def process_compound(cpd: dict, work_base: Path,
 # ── Main ──────────────────────────────────────────────────────────────────────
 def run(outdir: Path, max_confs: int, dry_run: bool,
         compound_idx: int | None = None, n_threads: int | None = None,
-        top_confs: int = 10, restart: bool = False) -> None:
-    """
-    Run Tier-2 CREST validation.
-
-    Parallelisation mode (recommended):
-      Submit one SLURM job per compound using --compound 0..4 and --threads N.
-      Each job runs: RDKit embed → xTB pre-opt (water) → CREST (water)
-                                 → xTB pre-opt (CHCl3) → CREST (CHCl3)
-      After all 5 jobs finish, run --merge to combine into tier2_crest_table.csv.
-
-    Single-compound local test:
-      python scripts/tier2_crest.py --compound 0 --threads 4 --dry-run
-    """
-    (outdir / "figures").mkdir(parents=True, exist_ok=True)
+        restart: bool = False) -> None:
     work_base = outdir / "crest_runs"
-    work_base.mkdir(exist_ok=True)
-
+    work_base.mkdir(parents=True, exist_ok=True)
     n_threads = n_threads or os.cpu_count() or 1
 
     if compound_idx is not None:
         if compound_idx < 0 or compound_idx >= len(REFERENCE_COMPOUNDS):
             raise ValueError(
-                f"--compound must be 0–{len(REFERENCE_COMPOUNDS)-1}, "
-                f"got {compound_idx}. Compounds: "
-                + ", ".join(f"{i}={c['short']}"
-                            for i, c in enumerate(REFERENCE_COMPOUNDS))
+                f"--compound must be 0–{len(REFERENCE_COMPOUNDS)-1}, got {compound_idx}"
             )
         compounds_to_run = [REFERENCE_COMPOUNDS[compound_idx]]
-        print(f"\n[Parallel mode] Running compound {compound_idx}: "
-              f"{compounds_to_run[0]['name']}")
+        print(f"\n[Compound {compound_idx}] {compounds_to_run[0]['name']}")
     else:
         compounds_to_run = REFERENCE_COMPOUNDS
 
     results = []
     for cpd in compounds_to_run:
         r = process_compound(cpd, work_base, max_confs, dry_run, n_threads,
-                             top_confs=top_confs, outdir=outdir, restart=restart)
+                             outdir=outdir, restart=restart)
         results.append(r)
 
     if compound_idx is not None:
         short = compounds_to_run[0]["short"]
         out_csv = outdir / f"tier2_crest_compound_{compound_idx}_{short}.csv"
-        pd.DataFrame(results).to_csv(out_csv, index=False)
-        print(f"\nSaved: {out_csv}")
-        print(f"Run --merge after all 5 compounds complete to combine results.")
-        return
+    else:
+        out_csv = outdir / "tier2_crest_table.csv"
 
-    _save_and_plot(results, outdir)
-
-
-def _save_and_plot(results: list[dict], outdir: Path) -> None:
-    table = pd.DataFrame([{k: v for k, v in r.items()} for r in results])
-    out_csv = outdir / "tier2_crest_table.csv"
-    table.to_csv(out_csv, index=False)
-
-    print(f"\n{'='*60}")
-    print("CREST Tier-2 Summary")
-    print(f"{'='*60}")
-    disp_cols = ["compound", "pampa", "db_delta_psa",
-                 "crest_delta_psa", "crest_delta_hb",
-                 "aq_n_confs", "mem_n_confs"]
-    avail = [c for c in disp_cols if c in table.columns]
-    print(table[avail].to_string(index=False))
+    pd.DataFrame(results).to_csv(out_csv, index=False)
     print(f"\nSaved: {out_csv}")
-    print(f"Run locally: python scripts/plot_tier2_results.py --csv {out_csv}")
-
-
-def merge_parallel_results(outdir: Path) -> None:
-    """
-    Combine per-compound CSVs written by parallel jobs into tier2_crest_table.csv.
-    Run after all --compound jobs complete.
-    """
-    import glob
-    pattern = str(outdir / "tier2_crest_compound_*.csv")
-    files = sorted(glob.glob(pattern))
-    if not files:
-        print(f"No per-compound CSVs found matching: {pattern}")
-        return
-    print(f"Merging {len(files)} per-compound files...")
-    dfs = [pd.read_csv(f) for f in files]
-    combined = pd.concat(dfs, ignore_index=True)
-    order = {c["name"]: i for i, c in enumerate(REFERENCE_COMPOUNDS)}
-    combined["_order"] = combined["compound"].map(order)
-    combined = combined.sort_values("_order").drop(columns="_order").reset_index(drop=True)
-    out_csv = outdir / "tier2_crest_table.csv"
-    combined.to_csv(out_csv, index=False)
-    print(f"Merged {len(combined)} compounds → {out_csv}")
-    print(f"Run locally: python scripts/plot_tier2_results.py --csv {out_csv}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -933,55 +830,32 @@ def parse_args() -> argparse.Namespace:
         description="Tier-2 CREST+ALPB validation (CREMP-matching pipeline)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Parallelisation (one job per compound):
-  python tier2_crest.py --compound 0 --threads 20   # HexPep
-  python tier2_crest.py --compound 1 --threads 20   # CsA
-  python tier2_crest.py --compound 2 --threads 20   # PSLYF
-  python tier2_crest.py --compound 3 --threads 20   # DP-955
-  python tier2_crest.py --compound 4 --threads 20   # DP-944
-
-  After all 5 finish:
-  python tier2_crest.py --merge
-
 Compound index reference:
   0 = HexPep  (impermeable,  6-mer)
   1 = CsA     (permeable,   11-mer, chameleonic, expected ΔPSA ~75 Å²)
-  2 = PSLYF   (impermeable, 11-mer, HBD=8)
-  3 = DP-955  (permeable,   15-mer, CHUGAI 2013)
-  4 = DP-944  (impermeable, 15-mer, CHUGAI 2013)
+  2 = PSLYF   (impermeable, 11-mer)
+  3 = DP-955  (permeable,   15-mer)
+  4 = DP-944  (impermeable, 15-mer)
         """
     )
     parser.add_argument("--outdir",    "-o", default="results", type=Path)
     parser.add_argument("--max-confs", "-c", type=int, default=200)
     parser.add_argument("--dry-run",   action="store_true",
                         help="Skip CREST, use placeholder values for testing")
-    parser.add_argument("--compound",  type=int, default=None,
-                        metavar="IDX",
-                        help="Run only compound IDX (0-4). For parallel job submission.")
-    parser.add_argument("--threads",   type=int, default=None,
-                        metavar="N",
+    parser.add_argument("--compound",  type=int, default=None, metavar="IDX",
+                        help="Run only compound IDX (0-4). For parallel SLURM submission.")
+    parser.add_argument("--threads",   type=int, default=None, metavar="N",
                         help="Threads for CREST (-T) and workers for xTB pre-opt. "
                              "Default: all available cores.")
-    parser.add_argument("--top-confs", type=int, default=10,
-                        metavar="N",
-                        help="Save top-N Boltzmann-weighted conformers per solvent as "
-                             "multi-conformer XYZ in results/conformers/. "
-                             "Set to 0 to disable. (default: 10)")
-    parser.add_argument("--merge",     action="store_true",
-                        help="Merge per-compound CSVs after parallel jobs complete.")
     parser.add_argument("--restart",   action="store_true",
                         help="Reload saved full_ensemble.xyz instead of re-running CREST. "
-                             "Use to extend analysis with a higher --max-confs cap without "
-                             "re-running the conformer search.")
+                             "Use to extend analysis with a higher --max-confs cap.")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    if args.merge:
-        merge_parallel_results(Path(args.outdir))
-    else:
-        run(Path(args.outdir),
-            max_confs=args.max_confs, dry_run=args.dry_run,
-            compound_idx=args.compound, n_threads=args.threads,
-            top_confs=args.top_confs, restart=args.restart)
+    run(Path(args.outdir),
+        max_confs=args.max_confs, dry_run=args.dry_run,
+        compound_idx=args.compound, n_threads=args.threads,
+        restart=args.restart)

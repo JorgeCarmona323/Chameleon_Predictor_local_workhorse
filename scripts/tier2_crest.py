@@ -97,7 +97,10 @@ REFERENCE_COMPOUNDS = [
         "name": "c*[PSLYF]",
         "short": "PSLYF",
         "cycpeptmpdb_id": 1829,
-        "smiles": None,  # fetched from feature matrix at runtime
+        "smiles": (
+            "CC(C)C[C@@H]1NC(=O)[C@H](CO)NC(=O)[C@@H]2CCCN2[C@H](C(=O)NC(C)(C)C)"
+            "[C@H](C)NC(=O)[C@H](Cc2ccccc2)NC(=O)[C@H](Cc2ccc(O)cc2)NC1=O"
+        ),
         "source": "Hickey, J Med Chem 2016",
         "pampa": -9.10,
         "permeable": False,
@@ -151,14 +154,6 @@ def _log(msg: str) -> None:
     """Print a timestamped line and flush immediately (for tail -f visibility)."""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
-
-# ── Utility: get SMILES from feature matrix ───────────────────────────────────
-def load_smiles_from_matrix(matrix_csv: str) -> dict:
-    """Return {ID: SMILES} for all reference IDs that have None SMILES."""
-    fm = pd.read_csv(matrix_csv, low_memory=False)
-    smiles_col = "SMILES_canonical" if "SMILES_canonical" in fm.columns else "SMILES"
-    id_to_smi = fm.set_index("ID")[smiles_col].to_dict()
-    return id_to_smi
 
 
 # ── CREMP Step 1: RDKit conformer embedding ───────────────────────────────────
@@ -841,7 +836,7 @@ def process_compound(cpd: dict, work_base: Path,
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
+def run(outdir: Path, max_confs: int, dry_run: bool,
         compound_idx: int | None = None, n_threads: int | None = None,
         top_confs: int = 10, restart: bool = False) -> None:
     """
@@ -861,17 +856,6 @@ def run(matrix_csv: str, outdir: Path, max_confs: int, dry_run: bool,
     work_base.mkdir(exist_ok=True)
 
     n_threads = n_threads or os.cpu_count() or 1
-
-    # Fill in SMILES for compounds that need them from feature matrix
-    id_to_smi = load_smiles_from_matrix(matrix_csv)
-    for cpd in REFERENCE_COMPOUNDS:
-        if cpd["smiles"] is None:
-            cid = cpd["cycpeptmpdb_id"]
-            cpd["smiles"] = id_to_smi.get(cid)
-            if cpd["smiles"]:
-                print(f"Loaded SMILES for {cpd['name']} (ID={cid}) from feature matrix")
-            else:
-                print(f"WARNING: No SMILES found for {cpd['name']} (ID={cid})")
 
     if compound_idx is not None:
         if compound_idx < 0 or compound_idx >= len(REFERENCE_COMPOUNDS):
@@ -967,7 +951,6 @@ Compound index reference:
   4 = DP-944  (impermeable, 15-mer, CHUGAI 2013)
         """
     )
-    parser.add_argument("--matrix",    "-m", default="results/feature_matrix.csv")
     parser.add_argument("--outdir",    "-o", default="results", type=Path)
     parser.add_argument("--max-confs", "-c", type=int, default=200)
     parser.add_argument("--dry-run",   action="store_true",
@@ -998,7 +981,7 @@ if __name__ == "__main__":
     if args.merge:
         merge_parallel_results(Path(args.outdir))
     else:
-        run(args.matrix, Path(args.outdir),
+        run(Path(args.outdir),
             max_confs=args.max_confs, dry_run=args.dry_run,
             compound_idx=args.compound, n_threads=args.threads,
             top_confs=args.top_confs, restart=args.restart)

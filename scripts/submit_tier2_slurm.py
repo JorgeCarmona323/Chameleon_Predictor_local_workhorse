@@ -52,7 +52,6 @@ TIME        = None                # Wall-time limit per compound — None = no l
 # Paths — relative to repo root on the cluster
 SCRIPT_PATH = "scripts/tier2_crest.py"
 OUTDIR      = "results"
-MATRIX_CSV  = "results/feature_matrix.csv"
 LOGS_BASE   = "results/slurm_logs"
 
 # ── Compound metadata (mirrors REFERENCE_COMPOUNDS in tier2_crest.py) ─────────
@@ -106,7 +105,6 @@ def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
         python {SCRIPT_PATH} \\
             --compound {idx} \\
             --threads  {cpus} \\
-            --matrix   {MATRIX_CSV} \\
             --outdir   {OUTDIR}
 
         EXIT_CODE=$?

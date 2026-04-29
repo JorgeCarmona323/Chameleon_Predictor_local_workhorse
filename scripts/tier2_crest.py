@@ -50,7 +50,10 @@ import multiprocessing
 import os
 import shutil
 import subprocess
+import sys
+import time
 import warnings
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -144,6 +147,11 @@ SOLVENT_MEM = "chcl3"   # ε=4.8
 POLAR_ATOMIC_NUMS = {7, 8}  # N and O
 
 
+def _log(msg: str) -> None:
+    """Print a timestamped line and flush immediately (for tail -f visibility)."""
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
 # ── Utility: get SMILES from feature matrix ───────────────────────────────────
 def load_smiles_from_matrix(matrix_csv: str) -> dict:
     """Return {ID: SMILES} for all reference IDs that have None SMILES."""
@@ -170,16 +178,24 @@ def embed_rdkit_conformers(mol, n_embed: int = 5000, n_max: int = 50,
     params.useMacrocycleTorsions = True
     params.numThreads = 0                 # all available cores
 
+    _log(f"    ETKDGv3: embedding {n_embed} conformers...")
+    t0 = time.time()
     AllChem.EmbedMultipleConfs(mol, numConfs=n_embed, params=params)
     if mol.GetNumConformers() == 0:
         raise RuntimeError("ETKDGv3 produced zero conformers")
+    _log(f"    ETKDGv3: {mol.GetNumConformers()} embedded in {time.time()-t0:.0f}s")
 
     # Skip MMFF optimisation if any bond has E/Z stereo (CREMP behaviour)
     has_cistrans = not all(
         bond.GetStereo() is Chem.BondStereo.STEREONONE for bond in mol.GetBonds()
     )
     if not has_cistrans:
+        _log("    MMFF: skipped (E/Z stereo bonds present)")
+    else:
+        _log("    MMFF: optimising all conformers...")
+        t0 = time.time()
         AllChem.MMFFOptimizeMoleculeConfs(mol, numThreads=0)
+        _log(f"    MMFF: done in {time.time()-t0:.0f}s")
 
     # Rank by MMFF energy, keep up to n_max with pairwise RMSD ≥ rmsd_thresh
     AllChem.MMFFSanitizeMolecule(mol)
@@ -309,8 +325,20 @@ def xtb_preopt_mol(mol, solvent: str, work_dir: Path,
     ]
 
     n_workers = min(n_procs, len(conf_ids))
+    _log(f"    xTB: starting {len(conf_ids)} optimisations ({n_workers} parallel workers)...")
+    t0 = time.time()
+    results = []
+    done = 0
     with multiprocessing.Pool(n_workers) as pool:
-        results = pool.map(_xtb_opt_worker, params_list)
+        for result in pool.imap_unordered(_xtb_opt_worker, params_list):
+            done += 1
+            status = "ok" if result is not None else "failed"
+            elapsed = time.time() - t0
+            _log(f"    xTB: {done}/{len(conf_ids)} done ({elapsed:.0f}s elapsed) — conf {result[0] if result else '?'} {status}")
+            results.append(result)
+
+    n_ok = sum(1 for r in results if r is not None)
+    _log(f"    xTB: {n_ok}/{len(conf_ids)} succeeded in {time.time()-t0:.0f}s")
 
     valid = [r for r in results if r is not None]
     if not valid:
@@ -341,17 +369,32 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
         "--keepdir",
     ]
 
-    print(f"      Running: {' '.join(cmd)}")
-    result = subprocess.run(
-        cmd, cwd=work_dir.resolve(),
-        capture_output=True, text=True, timeout=86400,
-    )
+    _log(f"    CREST: {' '.join(cmd)}")
+    _log(f"    CREST: stdout → crest.out  stderr → crest.err")
+    t0 = time.time()
 
+    # Redirect CREST output to files (mirrors CREMP) so tail -f stays readable
+    out_path = work_dir / "crest.out"
+    err_path = work_dir / "crest.err"
+    with open(out_path, "w") as fout, open(err_path, "w") as ferr:
+        proc = subprocess.run(
+            cmd, cwd=work_dir.resolve(),
+            stdout=fout, stderr=ferr, timeout=86400,
+        )
+
+    elapsed = time.time() - t0
     ensemble = work_dir.resolve() / "crest_conformers.xyz"
     if ensemble.exists() and ensemble.stat().st_size > 0:
+        _log(f"    CREST: finished in {elapsed/3600:.2f}h — ensemble found")
         return ensemble
     else:
-        print(f"      CREST stderr: {result.stderr[-500:]}")
+        _log(f"    CREST: FAILED after {elapsed:.0f}s (exit={proc.returncode})")
+        # Print last 20 lines of stderr for diagnosis
+        try:
+            tail = err_path.read_text().splitlines()[-20:]
+            print("\n".join(f"      ERR: {l}" for l in tail), flush=True)
+        except Exception:
+            pass
         return None
 
 
@@ -640,17 +683,17 @@ def process_compound(cpd: dict, work_base: Path,
         return result
     mol = Chem.AddHs(mol)
     charge = sum(atom.GetFormalCharge() for atom in mol.GetAtoms())
-    print(f"  Formal charge: {charge}  |  Atoms (with H): {mol.GetNumAtoms()}")
+    _log(f"  Formal charge: {charge}  |  Atoms (with H): {mol.GetNumAtoms()}")
 
     # ── CREMP Step 1: embed 5000 → filter to 50 ──────────────────────────────
-    print(f"  Embedding conformers (ETKDGv3, 5000 → 50)...")
+    _log(f"  Step 1: RDKit ETKDGv3 embedding (5000 → 50)...")
     try:
         mol_embedded = embed_rdkit_conformers(mol)
     except RuntimeError as e:
-        print(f"  ⚠ Embedding failed: {e}")
+        _log(f"  ⚠ Embedding failed: {e}")
         return result
     n_embedded = mol_embedded.GetNumConformers()
-    print(f"  {n_embedded} conformers after MMFF filter")
+    _log(f"  Step 1 done: {n_embedded} conformers after MMFF+RMSD filter")
 
     # Template mol for PSA Path A — reuse mol_embedded (has connectivity + H)
     _template_mol = mol_embedded
@@ -691,11 +734,11 @@ def process_compound(cpd: dict, work_base: Path,
         else:
             # CREMP Step 2: xTB pre-optimisation (per-solvent)
             xtb_dir = sol_dir / "xtb_opt"
-            print(f"      xTB pre-opt: {n_embedded} conformers × {min(n_threads, n_embedded)} workers...")
+            _log(f"  Step 2: xTB pre-opt ({n_embedded} conformers, {min(n_threads, n_embedded)} workers)...")
             mol_min = xtb_preopt_mol(mol_embedded, solvent, xtb_dir, charge,
                                      n_procs=n_threads)
             if mol_min is None:
-                print(f"      ⚠ All xTB jobs failed — skipping {label}")
+                _log(f"  ⚠ All xTB jobs failed — skipping {label}")
                 continue
 
             # Write lowest-energy xTB conformer as CREST input
@@ -704,7 +747,8 @@ def process_compound(cpd: dict, work_base: Path,
             xyz_in = crest_dir / f"{short}_{label}_start.xyz"
             _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(),
                                  xyz_in, comment=smi)
-            print(f"      xTB-optimised start XYZ: {xyz_in.name}")
+            _log(f"  Step 2 done: xTB-optimised start XYZ written → {xyz_in.name}")
+            _log(f"  Step 3: CREST iMTD-GC ({solvent})...")
 
             # CREMP Step 3: CREST iMTD-GC
             try:

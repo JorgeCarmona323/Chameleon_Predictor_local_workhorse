@@ -1,0 +1,18 @@
+Note: The following floating-point exceptions are signalling: IEEE_UNDERFLOW_FLAG IEEE_DENORMAL
+ERROR STOP crest_xtbsp failed
+
+Error termination. Backtrace:
+#0  0x5ea660d13a6f in crest_xtbsp_
+	at /usr/local/src/conda/crest-3.0.2/src/algos/singlepoint.f90:185
+#1  0x5ea6610a0d9d in xtbsp_
+	at /usr/local/src/conda/crest-3.0.2/src/legacy_wrappers.f90:203
+#2  0x5ea66103538e in md_length_setup_
+	at /usr/local/src/conda/crest-3.0.2/src/choose_settings.f90:55
+#3  0x5ea660df3002 in crest_search_imtdgc_
+	at /usr/local/src/conda/crest-3.0.2/src/algos/search_conformers.f90:84
+#4  0x5ea6610a0c35 in confscript2i_
+	at /usr/local/src/conda/crest-3.0.2/src/legacy_wrappers.f90:148
+#5  0x5ea660ce5e53 in crest
+	at /usr/local/src/conda/crest-3.0.2/src/crest_main.f90:240
+#6  0x5ea660ce42b0 in main
+	at /usr/local/src/conda/crest-3.0.2/src/crest_main.f90:26

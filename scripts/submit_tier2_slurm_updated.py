@@ -19,9 +19,9 @@ from datetime import datetime
 from pathlib import Path
 
 PARTITION = "all"
-CONDA_ENV = "chameleon"
+CONDA_ENV = "chameleon_crest212"
 CONDA_SH = "~/miniconda3/etc/profile.d/conda.sh"
-CPUS = 4
+CPUS = 20
 MEM = "16G"
 TIME = None
 

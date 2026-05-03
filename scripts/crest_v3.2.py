@@ -1,54 +1,40 @@
 """
-06b_tier2_crest.py
-------------------
+crest_v3.2.py
+-------------
 Tier-2 validation using CREST iMTD-GC + ALPB dual-dielectric conformer sampling.
 
-Scientific rationale:
-  Unlike Tier-1 (ETKDG vacuum heuristic: max-PSA ≈ aqueous, min-PSA ≈ membrane),
-  CREST samples conformer ensembles INSIDE each dielectric environment using the
-  ALPB (Analytical Linearized Poisson-Boltzmann) solvation model. This directly
-  fulfills the proposal goal: "MMFF94 minimization at ε=78 and ε=4."
+Changes from v3.1:
+  - Consolidated output structure: results/runs/run_{ts}_{idx}_{short}/water|mem/
+    (no separate conformers/ directory — everything lives in the run folder)
+  - Parses crest.out → full CREMP-format thermodynamics in ensemble.json
+  - Exports ensemble.sdf (all conformers, RDKit connectivity) + ensemble.json per solvent
+  - from __future__ import annotations for Python 3.9 compat
+  - No max_confs cap by default (use --max-confs to override)
+  - Keeps --keepdir for METADYN/NORMMD crash recovery
 
-  The chameleonic ΔPSA computed here is:
-    Boltzmann-weighted mean PSA (water ensemble, ε=80)
-  − Boltzmann-weighted mean PSA (CHCl₃ ensemble, ε=4.8)
-
-  Boltzmann weights are computed from GFN2-xTB energies in the CREST XYZ
-  comment lines at T=298.15 K.  This is thermodynamically correct — each
-  conformer contributes proportionally to its equilibrium population rather
-  than using only the single lowest-energy structure.
-
-Pre-processing pipeline (mirrors CREMP — Atz et al. 2024):
-  1. RDKit ETKDGv3 embedding (5000 conformers, useMacrocycleTorsions=True)
-     → MMFF optimization → RMSD filter → top 50 conformers
-  2. xTB GFN2 geometry optimization of all 50 in parallel (one per CPU),
-     each with the target solvent (ALPB) — gives the lowest-energy conformer
-     as starting geometry for CREST
-  3. CREST iMTD-GC: --gfn2 --chrg {charge} --alpb {solvent} -T {threads}
-     (no --quick, no --mquick, no --noreftopo — matches CREMP exactly)
-
-Reference compounds (5 final) — size-stratified for chameleonic effect validation:
-  0. Hexapeptide   (ID=2,   Rezai & Lokey JACS 2006)      PAMPA=-6.20  impermeable  6-mer  negative control
-  1. CsA           (ID=1,   Witek JCTC 2016)               PAMPA=-5.90  permeable   11-mer  gold standard chameleonic
-  2. c*[PSLYF]     (ID=1829,Hickey JMedChem 2016)          PAMPA=-9.10  impermeable 11-mer  large impermeable
-  3. DP-955        (ID=917, CHUGAI 2013)                   PAMPA=-5.20  permeable   15-mer  largest permeable
-  4. DP-944        (ID=906, CHUGAI 2013)                   PAMPA=-7.00  impermeable 15-mer  largest impermeable
-
-Tools:
-  - CREST 3.x  (conda install -c conda-forge crest)
-  - xtb        (conda install -c conda-forge xtb)
-  - RDKit      for 3D PSA and H-bond calculation on ensemble
+Output layout per run:
+  results/runs/run_{timestamp}_{idx}_{short}/
+    water/
+      xtb_opt/          ← xTB intermediate files
+      crest/            ← CREST output (METADYN*, NORMMD*, crest_conformers.xyz)
+      ensemble.xyz      ← full conformer ensemble
+      ensemble.sdf      ← CREMP-format: all conformers with RDKit connectivity
+      ensemble.json     ← CREMP-format: thermodynamics + PSA/HB per conformer
+    mem/
+      (same structure)
+    {short}_results.csv ← PSA / HB / ΔPSA summary
 
 Usage:
-  python tier2_crest.py [--outdir results] [--max-confs 200] [--dry-run]
-
-  --dry-run  skips CREST (uses pre-computed dummy ensemble) for testing
+  python crest_v3.2.py --compound 1 --threads 20 --outdir results
 """
 
 from __future__ import annotations
+
 import argparse
+import json
 import multiprocessing
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -75,7 +61,6 @@ REFERENCE_COMPOUNDS = [
         "source": "Rezai & Lokey, JACS 2006",
         "pampa": -6.20,
         "permeable": False,
-        "db_delta_psa": 2.0,
         "hbd": 6,
     },
     {
@@ -88,10 +73,9 @@ REFERENCE_COMPOUNDS = [
             "N[C@@H](C)C(=O)N[C@H](C)C(=O)N(C)[C@@H](CC(C)C)C(=O)N(C)[C@@H](CC(C)C)"
             "C(=O)N(C)[C@@H](C(C)C)C(=O)N1C"
         ),
-        "source": "Witek JCTC 2016 / Rezai 2006 (NMR+MD proven, expected ΔPSA ~75 Å²)",
-        "pampa": -5.90,  # cross-lab mean
+        "source": "Witek JCTC 2016",
+        "pampa": -5.90,
         "permeable": True,
-        "db_delta_psa": -1.0,
         "hbd": 5,
     },
     {
@@ -105,7 +89,6 @@ REFERENCE_COMPOUNDS = [
         "source": "Hickey, J Med Chem 2016",
         "pampa": -9.10,
         "permeable": False,
-        "db_delta_psa": 0.0,
         "hbd": 8,
     },
     {
@@ -119,10 +102,9 @@ REFERENCE_COMPOUNDS = [
             "N(C)[C@@H](CC(C)C)C(=O)N[C@@H](C)C(=O)N(C)[C@@H](CC(C)C)C(=O)N1)"
             "C(=O)N1CCCCC1"
         ),
-        "source": "CHUGAI 2013 pharmaceutical screen",
+        "source": "CHUGAI 2013",
         "pampa": -5.20,
         "permeable": True,
-        "db_delta_psa": None,
         "hbd": None,
     },
     {
@@ -136,43 +118,36 @@ REFERENCE_COMPOUNDS = [
             "C(=O)N[C@@H](CC(C)C)C(=O)N(C)[C@@H](Cc2ccccc2)C(=O)N(C)[C@@H](CC(C)C)"
             "C(=O)N1)C(=O)N1CCCCC1"
         ),
-        "source": "CHUGAI 2013 pharmaceutical screen",
+        "source": "CHUGAI 2013",
         "pampa": -7.00,
         "permeable": False,
-        "db_delta_psa": None,
         "hbd": None,
     },
 ]
 
-# Solvents for ALPB — CHCl3 approximates membrane dielectric (ε≈4.8)
-SOLVENT_AQ  = "water"   # ε=80
-SOLVENT_MEM = "chcl3"   # ε=4.8
-
+SOLVENT_AQ  = "water"
+SOLVENT_MEM = "chcl3"
+LABEL_AQ    = "water"
+LABEL_MEM   = "mem"
 
 
 def _log(msg: str) -> None:
-    """Print a timestamped line and flush immediately (for tail -f visibility)."""
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
-
 
 
 # ── CREMP Step 1: RDKit conformer embedding ───────────────────────────────────
 def embed_rdkit_conformers(mol, n_embed: int = 5000, n_max: int = 50,
                            rmsd_thresh: float = 0.5,
                            mmff_fail_fraction_threshold: float = 0.25):
-    """
-    ETKDGv3 embedding + MMFF filter → up to n_max conformers.
-    Mirrors CREMP rdconf.py exactly (Atz et al. 2024).
-    """
     from rdkit import Chem
     from rdkit.Chem import AllChem
 
     params = AllChem.ETKDGv3()
-    params.maxIterations = 10 * n_embed   # 50 000
+    params.maxIterations = 10 * n_embed
     params.pruneRmsThresh = 0.01
     params.useRandomCoords = True
     params.useMacrocycleTorsions = True
-    params.numThreads = 0                 # all available cores
+    params.numThreads = 0
 
     _log(f"    ETKDGv3: embedding {n_embed} conformers...")
     t0 = time.time()
@@ -181,8 +156,6 @@ def embed_rdkit_conformers(mol, n_embed: int = 5000, n_max: int = 50,
         raise RuntimeError("ETKDGv3 produced zero conformers")
     _log(f"    ETKDGv3: {mol.GetNumConformers()} embedded in {time.time()-t0:.0f}s")
 
-    # Prepare molecule for MMFF and skip optimisation if any bond has E/Z stereo
-    # (CREMP behaviour). MMFF sanitization must happen before MMFF property / FF calls.
     AllChem.MMFFSanitizeMolecule(mol)
     has_cistrans = any(
         bond.GetStereo() is not Chem.BondStereo.STEREONONE for bond in mol.GetBonds()
@@ -195,7 +168,6 @@ def embed_rdkit_conformers(mol, n_embed: int = 5000, n_max: int = 50,
         AllChem.MMFFOptimizeMoleculeConfs(mol, numThreads=0)
         _log(f"    MMFF: done in {time.time()-t0:.0f}s")
 
-    # Rank by MMFF energy, keep up to n_max with pairwise RMSD ≥ rmsd_thresh
     mmff_props = AllChem.MMFFGetMoleculeProperties(mol)
     confs = list(mol.GetConformers())
     energies = []
@@ -212,19 +184,14 @@ def embed_rdkit_conformers(mol, n_embed: int = 5000, n_max: int = 50,
 
     if mmff_fail_count:
         fail_frac = mmff_fail_count / max(1, len(confs))
-        _log(
-            f"    MMFF: force-field setup failed for {mmff_fail_count}/{len(confs)} conformers "
-            f"({fail_frac:.1%}); treating as +inf energy"
-        )
+        _log(f"    MMFF: force-field setup failed for {mmff_fail_count}/{len(confs)} conformers")
         if fail_frac > mmff_fail_fraction_threshold:
             raise RuntimeError(
-                "MMFF force-field setup failed for too many conformers: "
-                f"{mmff_fail_count}/{len(confs)} (>{mmff_fail_fraction_threshold:.0%}). "
-                f"Example conformer IDs: {mmff_failed_conf_ids[:10]}"
+                f"MMFF force-field setup failed for too many conformers: "
+                f"{mmff_fail_count}/{len(confs)} (>{mmff_fail_fraction_threshold:.0%})"
             )
 
     sort_idx = np.argsort(energies)
-
     mol_no_h = Chem.RemoveHs(mol)
     atom_idxs = [a.GetIdx() for a in mol_no_h.GetAtoms()]
     matches = mol_no_h.GetSubstructMatches(mol_no_h, uniquify=False)
@@ -249,14 +216,12 @@ def embed_rdkit_conformers(mol, n_embed: int = 5000, n_max: int = 50,
     new_mol.RemoveAllConformers()
     for i in keep:
         new_mol.AddConformer(mol.GetConformer(confs[i].GetId()), assignId=True)
-
     return new_mol
 
 
 # ── CREMP Step 2: xTB geometry optimisation ───────────────────────────────────
 def _write_conformer_xyz(mol, conf_id: int, xyz_path: Path,
                          comment: str = "") -> None:
-    """Write a single conformer from mol to an XYZ file."""
     conf = mol.GetConformer(conf_id)
     pos  = conf.GetPositions()
     syms = [mol.GetAtomWithIdx(i).GetSymbol() for i in range(mol.GetNumAtoms())]
@@ -267,11 +232,6 @@ def _write_conformer_xyz(mol, conf_id: int, xyz_path: Path,
 
 
 def _xtb_opt_worker(args):
-    """
-    Module-level worker for multiprocessing: GFN2-xTB --opt of one conformer.
-    Mirrors CREMP xtb.py XTBConformerOptimizer.run_xtb().
-    Returns (conf_id, mol_with_single_optimised_conf, energy_hartree) or None.
-    """
     from rdkit import Chem
 
     conf_id, mol, conf_dir, solvent, charge = args
@@ -290,7 +250,6 @@ def _xtb_opt_worker(args):
         model = "gbsa" if solvent.lower() == "methanol" else "alpb"
         cmd.extend([f"--{model}", solvent])
 
-    # OMP_NUM_THREADS=1,1 — matches CREMP: single-threaded per worker
     env = {**os.environ, "OMP_NUM_THREADS": "1,1"}
     xtb_out = conf_dir / "xtb.out"
     xtb_err = conf_dir / "xtb.err"
@@ -316,7 +275,6 @@ def _xtb_opt_worker(args):
     try:
         with open(opt_xyz) as f:
             n_atoms = int(next(f))
-            # xTB comment usually begins with 'energy:'; parse defensively.
             comment = next(f).strip().split()
             energy = None
             for i, tok in enumerate(comment[:-1]):
@@ -344,12 +302,6 @@ def _xtb_opt_worker(args):
 
 def xtb_preopt_mol(mol, solvent: str, work_dir: Path,
                    charge: int, n_procs: int = 1):
-    """
-    Run GFN2-xTB --opt on all conformers in mol in parallel (n_procs workers).
-    Returns a mol containing only the single lowest-energy optimised conformer.
-    Mirrors CREMP xtb.py XTBMolOptimization + get_mol_with_lowest_energy_conf().
-    Returns None if all xTB jobs fail.
-    """
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -372,7 +324,7 @@ def xtb_preopt_mol(mol, solvent: str, work_dir: Path,
             done += 1
             status = "ok" if result is not None else "failed"
             elapsed = time.time() - t0
-            _log(f"    xTB: {done}/{len(conf_ids)} done ({elapsed:.0f}s elapsed) — conf {result[0] if result else '?'} {status}")
+            _log(f"    xTB: {done}/{len(conf_ids)} done ({elapsed:.0f}s) — conf {result[0] if result else '?'} {status}")
             results.append(result)
 
     n_ok = sum(1 for r in results if r is not None)
@@ -389,12 +341,6 @@ def xtb_preopt_mol(mol, solvent: str, work_dir: Path,
 # ── CREMP Step 3: CREST conformer sampling ────────────────────────────────────
 def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
               n_threads: int, charge: int = 0) -> Path | None:
-    """
-    Run CREST iMTD-GC with GFN2-xTB + ALPB solvation.
-    Command mirrors CREMP crest.py CRESTSampler.run_crest() exactly:
-      crest {xyz} -T {n} --gfn2 --chrg {q} --alpb {solvent} --keepdir
-    Returns path to crest_conformers.xyz, or None on failure.
-    """
     work_dir.mkdir(parents=True, exist_ok=True)
     xyz_path = xyz_path.resolve()
 
@@ -408,16 +354,13 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
     ]
 
     _log(f"    CREST: {' '.join(cmd)}")
-    _log(f"    CREST: stdout → crest.out  stderr → crest.err")
     t0 = time.time()
-
-    # Redirect CREST output to files (mirrors CREMP) so tail -f stays readable
     out_path = work_dir / "crest.out"
     err_path = work_dir / "crest.err"
     with open(out_path, "w") as fout, open(err_path, "w") as ferr:
         proc = subprocess.run(
             cmd, cwd=work_dir.resolve(),
-            stdout=fout, stderr=ferr, timeout=86400,
+            stdout=fout, stderr=ferr,
         )
 
     elapsed = time.time() - t0
@@ -433,27 +376,97 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
     if ensemble.exists() and ensemble.stat().st_size > 0:
         _log(f"    CREST: finished in {elapsed/3600:.2f}h — ensemble found")
         return ensemble
-    _log(f"    CREST: finished with exit=0 but no ensemble produced after {elapsed:.0f}s")
-    try:
-        tail = err_path.read_text().splitlines()[-20:]
-        print("\n".join(f"      ERR: {l}" for l in tail), flush=True)
-    except Exception:
-        pass
+    _log(f"    CREST: finished with exit=0 but no ensemble after {elapsed:.0f}s")
     return None
 
 
-# ── Utility: parse multi-conformer XYZ → list of coordinate arrays ───────────
-def parse_xyz_ensemble(xyz_path: Path) -> tuple[list[tuple[list[str], np.ndarray, float]], int]:
+# ── Parse crest.out → CREMP-format thermodynamics ─────────────────────────────
+def parse_crest_log(crest_out_path: Path) -> dict | None:
     """
-    Parse a CREST multi-conformer XYZ file.
-    Returns (conformers, n_failed_energy_parses), where conformers is a list of
-    (atom_symbols, coords_array, energy_hartree) per conformer.
+    Parse crest.out for ensemble thermodynamics and per-conformer data.
+    Adapted from CREMP cremp/utils/postprocess.py parse_ensemble_data().
+    """
+    ensemble_patterns = {
+        "ensembleenergy":     ("ensemble average energy", float),
+        "ensembleentropy":    ("ensemble entropy",        float),
+        "ensemblefreeenergy": ("ensemble free energy",   float),
+        "lowestenergy":       ("E lowest",               float),
+        "poplowestpct":       ("population of lowest in %", float),
+        "temperature":        ("T /K",                   float),
+        "uniqueconfs":        ("number of unique conformers", int),
+        "totalconfs":         ("total number unique points", int),
+    }
+    conf_cols = {
+        "relativeenergy":  1,
+        "totalenergy":     2,
+        "conformerweight": 3,
+        "boltzmannweight": 4,
+        "set":             5,
+        "degeneracy":      6,
+    }
 
-    CREST usually writes the energy as the first token on the comment line; this
-    parser also searches the full comment line for the first float-like token.
-    Conformers whose energy comment cannot be parsed are kept with NaN energy and
-    counted so the caller can decide whether to proceed.
-    """
+    ensemble_data: dict = {}
+    conf_data: list[dict] = []
+    read = False
+
+    try:
+        lines = crest_out_path.read_text(errors="replace").splitlines()
+    except Exception:
+        return None
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+
+        if "Final Geometry Optimization" in line:
+            read = True
+
+        if read:
+            for key, (pattern, typ) in ensemble_patterns.items():
+                if line.startswith(pattern):
+                    try:
+                        ensemble_data[key] = typ(line.split()[-1])
+                    except (ValueError, IndexError):
+                        pass
+
+            if line.startswith("Erel/kcal"):
+                i += 1
+                while i < len(lines):
+                    conf_line = lines[i].strip()
+                    parts = conf_line.split()
+                    if len(parts) < 5:
+                        break
+                    if len(parts) >= 7:
+                        try:
+                            single: dict = {
+                                "relativeenergy":   float(parts[conf_cols["relativeenergy"]]),
+                                "totalenergy":      float(parts[conf_cols["totalenergy"]]),
+                                "conformerweights": [float(parts[conf_cols["conformerweight"]])],
+                                "boltzmannweight":  float(parts[conf_cols["boltzmannweight"]]),
+                                "set":              int(parts[conf_cols["set"]]),
+                                "degeneracy":       int(parts[conf_cols["degeneracy"]]),
+                            }
+                            conf_data.append(single)
+                        except (ValueError, IndexError):
+                            pass
+                    elif conf_data:
+                        try:
+                            conf_data[-1]["conformerweights"].append(float(parts[3]))
+                        except (ValueError, IndexError):
+                            pass
+                    i += 1
+                continue
+        i += 1
+
+    if not ensemble_data:
+        return None
+
+    ensemble_data["conformers"] = conf_data
+    return ensemble_data
+
+
+# ── Parse multi-conformer XYZ ─────────────────────────────────────────────────
+def parse_xyz_ensemble(xyz_path: Path) -> tuple[list, int]:
     conformers = []
     failed_energy_parses = 0
     lines = xyz_path.read_text().splitlines()
@@ -497,19 +510,13 @@ def parse_xyz_ensemble(xyz_path: Path) -> tuple[list[tuple[list[str], np.ndarray
     return conformers, failed_energy_parses
 
 
-
 def boltzmann_weights(energies_hartree: list[float], T: float = 298.15) -> np.ndarray:
-    """
-    Boltzmann population weights from GFN2-xTB energies at temperature T.
-    Ignores NaN energies; returns NaN weights for conformers with missing energy.
-    Raises if no valid energies are available.
-    """
     KCAL_PER_HARTREE = 627.509
-    RT = 1.987e-3 * T  # kcal/mol
+    RT = 1.987e-3 * T
     e = np.array(energies_hartree, dtype=float) * KCAL_PER_HARTREE
     valid = np.isfinite(e)
     if not np.any(valid):
-        raise RuntimeError("No valid conformer energies available for Boltzmann weighting")
+        raise RuntimeError("No valid conformer energies for Boltzmann weighting")
     e_rel = e[valid] - np.nanmin(e[valid])
     valid_weights = np.exp(-e_rel / RT)
     valid_weights /= valid_weights.sum()
@@ -518,80 +525,49 @@ def boltzmann_weights(energies_hartree: list[float], T: float = 298.15) -> np.nd
     return weights
 
 
-# ── Utility: compute 3D PSA from XYZ conformer ───────────────────────────────
+# ── 3D PSA ────────────────────────────────────────────────────────────────────
 def compute_psa_xyz(symbols: list[str], coords: np.ndarray,
                     template_mol=None) -> float:
-    """
-    Compute 3D polar SASA (Å²) from atom symbols and coordinates.
-
-    Implementation: uses rdFreeSASA with manual Bondi radii and SASAClass
-    assignment — identical to the _polar_sasa() function in conformer_engine.py.
-    This replaces the previous ad-hoc contact-counting exposure model
-    (exposure = max(0.1, 1.0 - contacts * 0.12)) which was physically incorrect
-    and systematically biased.
-
-    If template_mol is provided (an RDKit Mol with connectivity), the XYZ
-    coordinates are inserted as a new conformer and CalcSASA is called directly
-    — this gives correct mutual-occlusion via the Lee-Richards/Shrake-Rupley
-    algorithm.  If template_mol is None, the function falls back to the
-    standalone distance-matrix SASA approximation using the same Bondi radii
-    and polar-atom definition (N, O, S, P), which is still far more accurate
-    than the original contact-counting model.
-
-    Polar elements: N, O, S, P (consistent with conformer_engine.py and the
-    Ertl 2000 TPSA convention; polar-H excluded per the heavy-atom-only
-    convention documented in sasa_research_findings.md).
-
-    NOTE for n≥50 HB sampling: at n=20 conformers ΔHB=0 for all test
-    compounds.  This is a sampling artefact — use n≥50 for screening and
-    n≥200 for final production runs to obtain reliable ΔHB signal.
-    """
     from rdkit import Chem
-    from rdkit.Chem import AllChem, rdFreeSASA
+    from rdkit.Chem import rdFreeSASA
 
     _BONDI = {
         'H': 1.20, 'C': 1.70, 'N': 1.55, 'O': 1.52,
         'S': 1.80, 'P': 1.80, 'F': 1.47, 'Cl': 1.75,
         'Br': 1.85, 'I': 1.98,
     }
-    _POLAR_ELEMENTS = {'N', 'O', 'S', 'P'}
+    _POLAR = {'N', 'O', 'S', 'P'}
 
     if template_mol is not None:
         try:
             mol_h = Chem.RWMol(template_mol)
             if mol_h.GetNumAtoms() != len(symbols):
-                raise ValueError(
-                    f"Atom count mismatch: template has {mol_h.GetNumAtoms()}, "
-                    f"XYZ has {len(symbols)}"
-                )
+                raise ValueError("Atom count mismatch")
             conf = Chem.Conformer(mol_h.GetNumAtoms())
             for i, (x, y, z) in enumerate(coords):
                 conf.SetAtomPosition(i, (float(x), float(y), float(z)))
             conf_id = mol_h.AddConformer(conf, assignId=True)
             mol_h = mol_h.GetMol()
-
             radii = []
             for atom in mol_h.GetAtoms():
                 sym = atom.GetSymbol()
                 radii.append(_BONDI.get(sym, 1.50))
-                if sym in _POLAR_ELEMENTS:
+                if sym in _POLAR:
                     atom.SetIntProp('SASAClass', 0)
                     atom.SetProp('SASAClassName', 'Polar')
                 else:
                     atom.SetIntProp('SASAClass', 1)
                     atom.SetProp('SASAClassName', 'APolar')
-
             query = rdFreeSASA.MakeFreeSasaPolarAtomQuery()
             psa = rdFreeSASA.CalcSASA(mol_h, radii, confIdx=conf_id, query=query)
             return round(float(psa), 2)
         except Exception:
             pass
 
-    # Path B: standalone approximate SASA using pairwise distance-matrix shadowing
     PROBE = 1.40
     n = len(symbols)
     radii_all = np.array([_BONDI.get(s, 1.50) + PROBE for s in symbols])
-    polar_idx = [i for i, s in enumerate(symbols) if s in _POLAR_ELEMENTS]
+    polar_idx = [i for i, s in enumerate(symbols) if s in _POLAR]
     if not polar_idx:
         return 0.0
 
@@ -621,16 +597,11 @@ def compute_psa_xyz(symbols: list[str], coords: np.ndarray,
             buried += 2.0 * np.pi * r_i * h
         exposed = max(0.0, sphere_area - buried)
         total += exposed
-
     return round(total, 2)
 
 
-# ── Utility: count intramolecular H-bonds in XYZ conformer ───────────────────
+# ── Intramolecular H-bonds ────────────────────────────────────────────────────
 def count_hbonds_xyz(symbols: list[str], coords: np.ndarray) -> int:
-    """
-    Count intramolecular H-bonds: D-H...A where
-      D, A ∈ {N, O}; H...A distance < 2.5 Å; D-H...A angle > 120°.
-    """
     D_ATOMS = {"N", "O"}
     A_ATOMS = {"N", "O"}
     H_DIST_MAX = 2.5
@@ -671,11 +642,93 @@ def count_hbonds_xyz(symbols: list[str], coords: np.ndarray) -> int:
     return count
 
 
+# ── SDF export ────────────────────────────────────────────────────────────────
+def export_sdf(conformers: list, smiles: str, out_path: Path,
+               template_mol=None) -> bool:
+    """Write all conformers to SDF using RDKit connectivity from template mol."""
+    from rdkit import Chem
+
+    if template_mol is None:
+        mol = Chem.AddHs(Chem.MolFromSmiles(smiles))
+        if mol is None:
+            return False
+    else:
+        mol = Chem.RWMol(template_mol)
+        mol.RemoveAllConformers()
+
+    for syms, crds, _ in conformers:
+        if mol.GetNumAtoms() != len(syms):
+            continue
+        conf = Chem.Conformer(mol.GetNumAtoms())
+        for i, (x, y, z) in enumerate(crds):
+            conf.SetAtomPosition(i, (float(x), float(y), float(z)))
+        mol.AddConformer(conf, assignId=True)
+
+    if mol.GetNumConformers() == 0:
+        return False
+
+    writer = Chem.SDWriter(str(out_path))
+    for cid in range(mol.GetNumConformers()):
+        writer.write(mol, confId=cid)
+    writer.close()
+    return True
+
+
+# ── JSON export ───────────────────────────────────────────────────────────────
+def export_json(conformers: list, psa_vals: list, hb_vals: list,
+                weights: np.ndarray, smiles: str, charge: int,
+                crest_log: dict | None, out_path: Path) -> None:
+    """
+    Write CREMP-format JSON extended with per-conformer PSA and HB values.
+    If crest_log is available, ensemble thermodynamics are included.
+    """
+    conf_records = []
+    for i, (_, _, energy) in enumerate(conformers):
+        rec: dict = {
+            "totalenergy":    float(energy) if np.isfinite(energy) else None,
+            "boltzmannweight": float(weights[i]) if np.isfinite(weights[i]) else None,
+            "psa":            psa_vals[i],
+            "hbonds":         int(hb_vals[i]),
+        }
+        # Merge per-conformer data from crest.out if available and indices align
+        if crest_log and i < len(crest_log.get("conformers", [])):
+            log_conf = crest_log["conformers"][i]
+            rec["relativeenergy"]   = log_conf.get("relativeenergy")
+            rec["conformerweights"] = log_conf.get("conformerweights")
+            rec["set"]              = log_conf.get("set")
+            rec["degeneracy"]       = log_conf.get("degeneracy")
+        conf_records.append(rec)
+
+    data: dict = {
+        "smiles":    smiles,
+        "charge":    charge,
+        "n_confs":   len(conformers),
+    }
+
+    if crest_log:
+        for key in ("ensembleenergy", "ensembleentropy", "ensemblefreeenergy",
+                    "lowestenergy", "poplowestpct", "temperature",
+                    "uniqueconfs", "totalconfs"):
+            if key in crest_log:
+                data[key] = crest_log[key]
+
+    valid_w = np.isfinite(weights)
+    psa_arr = np.array(psa_vals)
+    hb_arr  = np.array(hb_vals, dtype=float)
+    data["boltzmann_psa"] = round(float(np.dot(weights[valid_w], psa_arr[valid_w])), 2)
+    data["boltzmann_hb"]  = round(float(np.dot(weights[valid_w], hb_arr[valid_w])), 2)
+    data["lowen_psa"]     = psa_vals[0]
+    data["lowen_hb"]      = int(hb_vals[0])
+    data["conformers"]    = conf_records
+
+    with open(out_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
 # ── Process one compound ──────────────────────────────────────────────────────
 def process_compound(cpd: dict, work_base: Path,
-                     max_confs: int, dry_run: bool, n_threads: int,
-                     outdir: Path | None = None,
-                     restart: bool = False) -> dict:
+                     max_confs: int | None, dry_run: bool,
+                     n_threads: int) -> dict:
     from rdkit import Chem
 
     name  = cpd["name"]
@@ -686,21 +739,18 @@ def process_compound(cpd: dict, work_base: Path,
     print(f"  {name}  (ID={cpd['cycpeptmpdb_id']})  PAMPA={cpd['pampa']}")
 
     result = {
-        "compound":        name,
-        "cycpeptmpdb_id":  cpd["cycpeptmpdb_id"],
-        "pampa":           cpd["pampa"],
-        "permeable":       cpd["permeable"],
-        "run_id":          work_base.name,
+        "compound":       name,
+        "cycpeptmpdb_id": cpd["cycpeptmpdb_id"],
+        "pampa":          cpd["pampa"],
+        "permeable":      cpd["permeable"],
+        "run_id":         work_base.name,
     }
 
     if smi is None:
-        print(f"  ⚠ No SMILES available — skipping")
+        print(f"  ⚠ No SMILES — skipping")
         return result
 
-    work_dir = work_base
-    work_dir.mkdir(parents=True, exist_ok=True)
-
-    # ── Build mol and compute formal charge (CREMP pattern) ───────────────────
+    work_base.mkdir(parents=True, exist_ok=True)
     mol = Chem.MolFromSmiles(smi)
     if mol is None:
         print(f"  ⚠ Invalid SMILES")
@@ -709,120 +759,87 @@ def process_compound(cpd: dict, work_base: Path,
     charge = sum(atom.GetFormalCharge() for atom in mol.GetAtoms())
     _log(f"  Formal charge: {charge}  |  Atoms (with H): {mol.GetNumAtoms()}")
 
-    # ── CREMP Step 1: embed 5000 → filter to 50 ──────────────────────────────
     _log(f"  Step 1: RDKit ETKDGv3 embedding (5000 → 50)...")
     try:
         mol_embedded = embed_rdkit_conformers(mol)
     except RuntimeError as e:
         _log(f"  ⚠ Embedding failed: {e}")
         return result
-    n_embedded = mol_embedded.GetNumConformers()
-    _log(f"  Step 1 done: {n_embedded} conformers after MMFF+RMSD filter")
-
-    # Template mol for PSA Path A — reuse mol_embedded (has connectivity + H)
+    _log(f"  Step 1 done: {mol_embedded.GetNumConformers()} conformers")
     _template_mol = mol_embedded
+
     failed_solvents = []
 
-    for solvent, label in [(SOLVENT_AQ, "aq"), (SOLVENT_MEM, "mem")]:
-        sol_dir = work_dir / solvent
+    for solvent, label in [(SOLVENT_AQ, LABEL_AQ), (SOLVENT_MEM, LABEL_MEM)]:
+        sol_dir = work_base / label
+        sol_dir.mkdir(parents=True, exist_ok=True)
         print(f"\n  ── [{label}] solvent={solvent} ──")
 
         if dry_run:
-            rng = np.random.default_rng(42 if label == "aq" else 43)
-            psa_mean = 180.0 if label == "aq" else 140.0
+            rng = np.random.default_rng(42 if label == LABEL_AQ else 43)
+            psa_mean = 180.0 if label == LABEL_AQ else 140.0
             psa_vals = rng.normal(psa_mean, 10, 50)
             hb_vals  = rng.integers(0, 4, 50)
-            result[f"{label}_psa_min"]    = float(psa_vals.min())
-            result[f"{label}_psa_max"]    = float(psa_vals.max())
-            result[f"{label}_psa_mean"]   = float(psa_vals.mean())
-            result[f"{label}_psa_boltz"]  = float(psa_vals.mean())
-            result[f"{label}_psa_std"]    = float(psa_vals.std())
-            result[f"{label}_hb_min"]     = int(hb_vals.min())
-            result[f"{label}_hb_max"]     = int(hb_vals.max())
-            result[f"{label}_hb_mean"]    = float(hb_vals.mean())
-            result[f"{label}_hb_boltz"]   = float(hb_vals.mean())
-            result[f"{label}_n_confs"]    = 50
-            result[f"{label}_psa_lowen"]  = float(psa_vals[0])
-            result[f"{label}_hb_lowen"]   = int(hb_vals[0])
-            print(f"      [DRY RUN] PSA_low-energy={result[f'{label}_psa_lowen']:.1f}")
+            result[f"{label}_psa_boltz"] = float(psa_vals.mean())
+            result[f"{label}_hb_boltz"]  = float(hb_vals.mean())
+            result[f"{label}_n_confs"]   = 50
+            result[f"{label}_status"]    = "dry_run"
             continue
 
-        # Full ensemble save path — used for restart and cap extension
-        saved_ens_path = (
-            outdir / "conformers" / short / label / "full_ensemble.xyz"
-            if outdir is not None else None
-        )
-
-        # ── Run pipeline or reload saved ensemble ─────────────────────────────
-        if restart and saved_ens_path is not None and saved_ens_path.exists():
-            print(f"      [RESTART] Loading saved ensemble: {saved_ens_path}")
-            ensemble_xyz = saved_ens_path
-        else:
-            # CREMP Step 2: xTB pre-optimisation (per-solvent)
-            xtb_dir = sol_dir / "xtb_opt"
-            _log(f"  Step 2: xTB pre-opt ({n_embedded} conformers, {min(n_threads, n_embedded)} workers)...")
-            mol_min = xtb_preopt_mol(mol_embedded, solvent, xtb_dir, charge,
-                                     n_procs=n_threads)
-            if mol_min is None:
-                _log(f"  ⚠ All xTB jobs failed — skipping {label}")
-                result[f"{label}_status"] = "failed"
-                result[f"{label}_error"] = "all xTB jobs failed"
-                failed_solvents.append(label)
-                continue
-
-            # Write lowest-energy xTB conformer as CREST input
-            crest_dir = sol_dir / "crest"
-            crest_dir.mkdir(parents=True, exist_ok=True)
-            xyz_in = crest_dir / f"{short}_{label}_start.xyz"
-            _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(),
-                                 xyz_in, comment=smi)
-            _log(f"  Step 2 done: xTB-optimised start XYZ written → {xyz_in.name}")
-            _log(f"  Step 3: CREST iMTD-GC ({solvent})...")
-
-            # CREMP Step 3: CREST iMTD-GC
-            try:
-                ensemble_xyz = run_crest(xyz_in, crest_dir, solvent,
-                                         n_threads, charge)
-            except subprocess.TimeoutExpired:
-                print(f"      ⚠ CREST timed out after 24h")
-                ensemble_xyz = None
-            except Exception as e:
-                print(f"      ⚠ CREST error: {e}")
-                ensemble_xyz = None
-
-        if ensemble_xyz is None:
-            print(f"      ⚠ CREST failed — no ensemble produced")
+        # Step 2: xTB pre-opt
+        xtb_dir = sol_dir / "xtb_opt"
+        _log(f"  Step 2: xTB pre-opt ({mol_embedded.GetNumConformers()} conformers)...")
+        mol_min = xtb_preopt_mol(mol_embedded, solvent, xtb_dir, charge,
+                                 n_procs=n_threads)
+        if mol_min is None:
+            _log(f"  ⚠ All xTB jobs failed — skipping {label}")
             result[f"{label}_status"] = "failed"
-            result[f"{label}_error"] = "no ensemble produced"
+            result[f"{label}_error"]  = "all xTB jobs failed"
             failed_solvents.append(label)
             continue
 
-        # Parse full ensemble before applying cap
-        conformers, energy_parse_fail_count_full = parse_xyz_ensemble(ensemble_xyz)
-        n_confs_full = len(conformers)
-        print(f"      Parsed {n_confs_full} conformers from ensemble")
-        if energy_parse_fail_count_full:
-            _log(
-                f"      Warning: failed to parse energies for {energy_parse_fail_count_full}/{n_confs_full} conformers"
-            )
+        # Step 3: CREST
+        crest_dir = sol_dir / "crest"
+        crest_dir.mkdir(parents=True, exist_ok=True)
+        xyz_in = crest_dir / f"{short}_{label}_start.xyz"
+        _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(),
+                             xyz_in, comment=smi)
+        _log(f"  Step 3: CREST iMTD-GC ({solvent})...")
+        try:
+            raw_ensemble = run_crest(xyz_in, crest_dir, solvent,
+                                     n_threads, charge)
+        except Exception as e:
+            print(f"      ⚠ CREST error: {e}")
+            raw_ensemble = None
 
-        # Save full ensemble for later restart / cap extension
-        if saved_ens_path is not None and not restart:
-            saved_ens_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(ensemble_xyz, saved_ens_path)
-            print(f"      Full ensemble saved → {saved_ens_path.name} ({n_confs_full} conformers)")
+        if raw_ensemble is None:
+            result[f"{label}_status"] = "failed"
+            result[f"{label}_error"]  = "no ensemble produced"
+            failed_solvents.append(label)
+            continue
+
+        # Copy ensemble.xyz to sol_dir level for easy access
+        ensemble_xyz = sol_dir / "ensemble.xyz"
+        shutil.copy2(raw_ensemble, ensemble_xyz)
+        _log(f"  Ensemble saved → {ensemble_xyz.name}")
+
+        # ── Parse ensemble ────────────────────────────────────────────────────
+        conformers, energy_fail = parse_xyz_ensemble(ensemble_xyz)
+        n_confs_full = len(conformers)
+        print(f"      Parsed {n_confs_full} conformers")
+        if energy_fail:
+            _log(f"      Warning: {energy_fail}/{n_confs_full} conformers missing energy")
 
         if n_confs_full == 0:
             result[f"{label}_status"] = "failed"
-            result[f"{label}_error"] = "empty ensemble"
+            result[f"{label}_error"]  = "empty ensemble"
             failed_solvents.append(label)
             continue
 
-        # Trim to cap if specified, otherwise use all
         if max_confs is not None:
             conformers = conformers[:max_confs]
         n_confs = len(conformers)
-        energy_nan_count = sum(0 if np.isfinite(eng) else 1 for _, _, eng in conformers)
+
         psa_vals, hb_vals, energies = [], [], []
         for syms, crds, eng in conformers:
             psa_vals.append(compute_psa_xyz(syms, crds, template_mol=_template_mol))
@@ -831,52 +848,70 @@ def process_compound(cpd: dict, work_base: Path,
 
         psa_arr = np.array(psa_vals)
         hb_arr  = np.array(hb_vals, dtype=float)
-
-        weights   = boltzmann_weights(energies)
+        weights = boltzmann_weights(energies)
         valid_w = np.isfinite(weights)
+
         psa_boltz = float(np.dot(weights[valid_w], psa_arr[valid_w]))
         hb_boltz  = float(np.dot(weights[valid_w], hb_arr[valid_w]))
 
-        psa_lowen = psa_arr[0]
-        hb_lowen  = hb_arr[0]
-
-        result[f"{label}_psa_lowen"]    = round(float(psa_lowen), 2)
+        result[f"{label}_psa_lowen"]    = round(float(psa_arr[0]), 2)
         result[f"{label}_psa_boltz"]    = round(psa_boltz, 2)
         result[f"{label}_psa_min"]      = round(float(psa_arr.min()), 2)
         result[f"{label}_psa_max"]      = round(float(psa_arr.max()), 2)
         result[f"{label}_psa_mean"]     = round(float(psa_arr.mean()), 2)
         result[f"{label}_psa_std"]      = round(float(psa_arr.std()), 2)
-        result[f"{label}_hb_lowen"]     = int(hb_lowen)
+        result[f"{label}_hb_lowen"]     = int(hb_arr[0])
         result[f"{label}_hb_boltz"]     = round(hb_boltz, 2)
         result[f"{label}_hb_min"]       = int(hb_arr.min())
         result[f"{label}_hb_max"]       = int(hb_arr.max())
         result[f"{label}_hb_mean"]      = round(float(hb_arr.mean()), 2)
         result[f"{label}_n_confs"]      = n_confs
         result[f"{label}_n_confs_full"] = n_confs_full
-        result[f"{label}_nan_energy_count"] = int(energy_nan_count)
-        result[f"{label}_nan_energy_count_full"] = int(energy_parse_fail_count_full)
+        result[f"{label}_status"]       = "ok"
 
-        print(f"      PSA (Boltzmann-wtd): {psa_boltz:.1f} Å²  "
-              f"(low-energy={psa_lowen:.1f}, mean={psa_arr.mean():.1f})")
-        print(f"      HB  (Boltzmann-wtd): {hb_boltz:.2f}  "
-              f"(low-energy={int(hb_lowen)})")
-        result[f"{label}_status"] = "ok"
+        print(f"      PSA (Boltzmann): {psa_boltz:.1f} Å²  "
+              f"(low-energy={psa_arr[0]:.1f}, mean={psa_arr.mean():.1f})")
+        print(f"      HB  (Boltzmann): {hb_boltz:.2f}  (low-energy={int(hb_arr[0])})")
+
+        # ── Parse crest.out for thermodynamics ────────────────────────────────
+        crest_out = sol_dir / "crest" / "crest.out"
+        crest_log = None
+        if crest_out.exists():
+            crest_log = parse_crest_log(crest_out)
+            if crest_log:
+                _log(f"      crest.out parsed: {crest_log.get('uniqueconfs','?')} unique confs")
+            else:
+                _log(f"      crest.out found but could not parse thermodynamics")
+        else:
+            _log(f"      crest.out not found at {crest_out} — JSON will omit thermodynamics")
+
+        # ── Export SDF ────────────────────────────────────────────────────────
+        sdf_path = sol_dir / "ensemble.sdf"
+        if export_sdf(conformers, smi, sdf_path, template_mol=_template_mol):
+            _log(f"      SDF written → {sdf_path.name} ({n_confs} conformers)")
+        else:
+            _log(f"      ⚠ SDF export failed")
+
+        # ── Export JSON ───────────────────────────────────────────────────────
+        json_path = sol_dir / "ensemble.json"
+        export_json(conformers, psa_vals, hb_vals, weights,
+                    smi, charge, crest_log, json_path)
+        _log(f"      JSON written → {json_path.name}")
 
     if failed_solvents:
-        raise RuntimeError(f"{short}: pipeline failed for solvent(s): {', '.join(sorted(set(failed_solvents)))}")
+        raise RuntimeError(f"{short}: failed for solvent(s): {', '.join(sorted(set(failed_solvents)))}")
 
-    # ── Compute Δ features ────────────────────────────────────────────────────
-    if "aq_psa_boltz" in result and "mem_psa_boltz" in result:
-        result["crest_delta_psa"]       = round(result["aq_psa_boltz"] - result["mem_psa_boltz"], 2)
-        aq_lowen = result.get("aq_psa_lowen", np.nan)
-        mem_lowen = result.get("mem_psa_lowen", np.nan)
-        if pd.notna(aq_lowen) and pd.notna(mem_lowen):
-            result["crest_delta_psa_lowen"] = round(aq_lowen - mem_lowen, 2)
-        else:
-            result["crest_delta_psa_lowen"] = np.nan
-        result["crest_delta_hb"]        = round(result["mem_hb_boltz"] - result["aq_hb_boltz"], 2)
-        result["crest_psa_spread_aq"]   = result.get("aq_psa_std", np.nan)
-        result["crest_psa_spread_mem"]  = result.get("mem_psa_std", np.nan)
+    # ── Δ features ────────────────────────────────────────────────────────────
+    aq_key  = f"{LABEL_AQ}_psa_boltz"
+    mem_key = f"{LABEL_MEM}_psa_boltz"
+    if aq_key in result and mem_key in result:
+        result["crest_delta_psa"]      = round(result[aq_key] - result[mem_key], 2)
+        aq_lo  = result.get(f"{LABEL_AQ}_psa_lowen",  np.nan)
+        mem_lo = result.get(f"{LABEL_MEM}_psa_lowen", np.nan)
+        result["crest_delta_psa_lowen"] = round(aq_lo - mem_lo, 2) if pd.notna(aq_lo) and pd.notna(mem_lo) else np.nan
+        result["crest_delta_hb"]        = round(result[f"{LABEL_MEM}_hb_boltz"] - result[f"{LABEL_AQ}_hb_boltz"], 2)
+        result["crest_psa_spread_aq"]   = result.get(f"{LABEL_AQ}_psa_std",  np.nan)
+        result["crest_psa_spread_mem"]  = result.get(f"{LABEL_MEM}_psa_std", np.nan)
         print(f"\n  ✓ CREST ΔPSA (Boltzmann) = {result['crest_delta_psa']:.1f} Å²  "
               f"(low-energy = {result['crest_delta_psa_lowen']:.1f} Å²  "
               f"ΔHB = {result['crest_delta_hb']:.2f})")
@@ -885,75 +920,61 @@ def process_compound(cpd: dict, work_base: Path,
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-def run(outdir: Path, max_confs: int, dry_run: bool,
-        compound_idx: int | None = None, n_threads: int | None = None,
-        restart: bool = False) -> None:
+def run(outdir: Path, max_confs: int | None, dry_run: bool,
+        compound_idx: int | None = None, n_threads: int | None = None) -> None:
+
     n_threads = n_threads or os.cpu_count() or 1
 
     if compound_idx is None:
-        raise RuntimeError(
-            "This script layout expects --compound so each costly compound runs in its own job."
-        )
+        raise RuntimeError("--compound is required.")
     if compound_idx < 0 or compound_idx >= len(REFERENCE_COMPOUNDS):
-        raise ValueError(
-            f"--compound must be 0–{len(REFERENCE_COMPOUNDS)-1}, got {compound_idx}"
-        )
+        raise ValueError(f"--compound must be 0–{len(REFERENCE_COMPOUNDS)-1}")
 
-    compounds_to_run = [REFERENCE_COMPOUNDS[compound_idx]]
-    short = compounds_to_run[0]["short"]
+    cpd   = REFERENCE_COMPOUNDS[compound_idx]
+    short = cpd["short"]
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_id = f"run_{timestamp}_{compound_idx}_{short}"
-    work_base = outdir / "crest_runs" / run_id
+    run_id    = f"run_{timestamp}_{compound_idx}_{short}"
+    work_base = outdir / "runs" / run_id
     work_base.mkdir(parents=True, exist_ok=True)
+    print(f"\n[Compound {compound_idx}] {cpd['name']}")
+    print(f"Run directory: {work_base}")
 
-    print(f"\n[Compound {compound_idx}] {compounds_to_run[0]['name']}")
-    print(f"CREST run directory: {work_base}")
+    r = process_compound(cpd, work_base, max_confs, dry_run, n_threads)
 
-    results = []
-    for cpd in compounds_to_run:
-        r = process_compound(cpd, work_base, max_confs, dry_run, n_threads,
-                             outdir=outdir, restart=restart)
-        results.append(r)
-
-    short = compounds_to_run[0]["short"]
-    out_csv = work_base / f"tier2_crest_compound_{compound_idx}_{short}.csv"
-
-    pd.DataFrame(results).to_csv(out_csv, index=False)
+    out_csv = work_base / f"{short}_results.csv"
+    pd.DataFrame([r]).to_csv(out_csv, index=False)
     print(f"\nSaved: {out_csv}")
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tier-2 CREST+ALPB validation (CREMP-matching pipeline)",
+        description="Tier-2 CREST+ALPB validation (v3.2 — CREMP-format outputs)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Compound index reference:
+Compound index:
   0 = HexPep  (impermeable,  6-mer)
-  1 = CsA     (permeable,   11-mer, chameleonic, expected ΔPSA ~75 Å²)
+  1 = CsA     (permeable,   11-mer)
   2 = PSLYF   (impermeable, 11-mer)
   3 = DP-955  (permeable,   15-mer)
   4 = DP-944  (impermeable, 15-mer)
         """
     )
     parser.add_argument("--outdir",    "-o", default="results", type=Path)
+    parser.add_argument("--compound",  type=int, default=None, metavar="IDX")
+    parser.add_argument("--threads",   type=int, default=None, metavar="N")
     parser.add_argument("--max-confs", "-c", type=int, default=None,
-                        help="Cap on conformers used for PSA analysis. Default: use all.")
-    parser.add_argument("--dry-run",   action="store_true",
-                        help="Skip CREST, use placeholder values for testing")
-    parser.add_argument("--compound",  type=int, default=None, metavar="IDX",
-                        help="Run only compound IDX (0-4). For parallel SLURM submission.")
-    parser.add_argument("--threads",   type=int, default=None, metavar="N",
-                        help="Threads for CREST (-T) and workers for xTB pre-opt. "
-                             "Default: all available cores.")
-    parser.add_argument("--restart",   action="store_true",
-                        help="Reload saved full_ensemble.xyz instead of re-running CREST. "
-                             "Use to extend analysis with a higher --max-confs cap.")
+                        help="Cap conformers used for PSA analysis. Default: all.")
+    parser.add_argument("--dry-run",   action="store_true")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run(Path(args.outdir),
-        max_confs=args.max_confs, dry_run=args.dry_run,
-        compound_idx=args.compound, n_threads=args.threads,
-        restart=args.restart)
+    run(
+        Path(args.outdir),
+        max_confs    = args.max_confs,
+        dry_run      = args.dry_run,
+        compound_idx = args.compound,
+        n_threads    = args.threads,
+    )

@@ -1,14 +1,14 @@
 """
 submit_tier2_slurm.py
 ---------------------
-Submit independent SLURM jobs for crest_v3.1.py (one per reference compound).
-Each job runs a single compound and writes its own run folder under results/crest_runs/.
+Submit independent SLURM jobs for crest_v3.2.py (one per reference compound).
+Each job runs a single compound and writes its own run folder under results/runs/.
 
 Examples:
-  python scripts/submit_tier2_slurm.py --dry-run
-  python scripts/submit_tier2_slurm.py
-  python scripts/submit_tier2_slurm.py --compounds 2 4
-  python scripts/submit_tier2_slurm.py --cpus 8 --mem 24G --time 24:00:00
+  python scripts/submit_tier2_slurm_updated.py --dry-run
+  python scripts/submit_tier2_slurm_updated.py
+  python scripts/submit_tier2_slurm_updated.py --compounds 1 3 4
+  python scripts/submit_tier2_slurm_updated.py --cpus 20 --mem 16G
 """
 
 import argparse
@@ -25,7 +25,7 @@ CPUS = 20
 MEM = "16G"
 TIME = None
 
-SCRIPT_PATH = "scripts/crest_v3.1.py"
+SCRIPT_PATH = "scripts/crest_v3.2.py"
 OUTDIR = "results"
 LOGS_BASE = "results/slurm_logs"
 
@@ -107,13 +107,13 @@ def submit_script(script_text: str, preview_only: bool) -> int | None:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="Submit crest_v3.1.py jobs to SLURM (one job per compound)",
+        description="Submit crest_v3.2.py jobs to SLURM (one job per compound)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             Examples:
-              python scripts/submit_tier2_slurm.py --dry-run
-              python scripts/submit_tier2_slurm.py
-              python scripts/submit_tier2_slurm.py --compounds 2 4 --cpus 8
+              python scripts/submit_tier2_slurm_updated.py --dry-run
+              python scripts/submit_tier2_slurm_updated.py
+              python scripts/submit_tier2_slurm_updated.py --compounds 1 3 4
         """),
     )
     p.add_argument(
@@ -133,7 +133,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dry-run", action="store_true",
                    help="Print SLURM scripts without submitting them.")
     p.add_argument("--submit-dry-run-jobs", action="store_true",
-                   help="Submit real SLURM jobs that run crest_v3.1.py with its --dry-run flag.")
+                   help="Submit real SLURM jobs that run crest_v3.2.py with its --dry-run flag.")
     return p.parse_args()
 
 
@@ -187,9 +187,9 @@ def main() -> None:
         print("\nMonitor with: squeue -u $USER")
         print(f"Check logs in: {logs_dir}/")
         if args.submit_dry_run_jobs:
-            print("Each job will run crest_v3.1.py with --dry-run and still create its own run folder under results/crest_runs/.")
+            print("Each job will run crest_v3.2.py with --dry-run and still create its own run folder under results/runs/.")
         else:
-            print("Each job will write its own run folder under results/crest_runs/.")
+            print("Each job will write its own run folder under results/runs/.")
 
 
 if __name__ == "__main__":

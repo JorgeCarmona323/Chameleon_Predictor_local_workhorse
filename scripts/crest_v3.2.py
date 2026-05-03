@@ -913,7 +913,8 @@ def process_compound(cpd: dict, work_base: Path,
         _log(f"      JSON written → {json_path.name}")
 
     if failed_solvents:
-        raise RuntimeError(f"{short}: failed for solvent(s): {', '.join(sorted(set(failed_solvents)))}")
+        _log(f"  WARNING: {short} failed for solvent(s): {', '.join(sorted(set(failed_solvents)))}")
+        result["failed_solvents"] = ",".join(sorted(set(failed_solvents)))
 
     # ── Δ features ────────────────────────────────────────────────────────────
     aq_key  = f"{LABEL_AQ}_psa_boltz"

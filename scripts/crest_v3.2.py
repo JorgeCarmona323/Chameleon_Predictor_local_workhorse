@@ -124,18 +124,17 @@ REFERENCE_COMPOUNDS = [
         "hbd": None,
     },
     {
-        "name": "Bockus_compd6",
-        "short": "BkC6",
-        "cycpeptmpdb_id": 971,
+        "name": "White_compd3",
+        "short": "WhC3",
+        "cycpeptmpdb_id": 25,
         "smiles": (
-            "CC(C)C[C@@H]1NC(=O)[C@H]2CCCN2C(=O)[C@H](CC(C)C)N(C)C(=O)"
-            "C[C@@H](O)[C@@H](CC(C)C)NC(=O)[C@H](CC(C)C)N(C)C(=O)"
-            "[C@H](CC(C)C)N(C)C(=O)C[C@@H]1O"
+            "CC(C)C[C@@H]1NC(=O)[C@H](Cc2ccc(O)cc2)N(C)C(=O)[C@H]2CCCN2C(=O)"
+            "[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@@H](CC(C)C)N(C)C1=O"
         ),
-        "source": "Bockus, J Med Chem 2015",
-        "pampa": -4.70,
+        "source": "White, Nat Chem Biol 2011",
+        "pampa": -5.31,  # RRCK assay; no PAMPA measurement available
         "permeable": True,
-        "hbd": None,
+        "hbd": 3,  # 2 amide NH + Tyr phenol OH
     },
 ]
 
@@ -980,7 +979,7 @@ Compound index:
   2 = PSLYF   (impermeable, 11-mer)
   3 = DP-955  (permeable,   15-mer)
   4 = DP-944  (impermeable, 15-mer)
-  5 = BkC6    (permeable,    6-mer, Bockus 2015 compd.6, most permeable Lokey hexamer)
+  5 = WhC3    (permeable,    6-mer, White 2011 compd.3, RRCK=-5.31)
         """
     )
     parser.add_argument("--outdir",    "-o", default="results", type=Path)

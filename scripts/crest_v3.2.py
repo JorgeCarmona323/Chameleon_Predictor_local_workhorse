@@ -862,7 +862,14 @@ def process_compound(cpd: dict, work_base: Path,
 
         psa_arr = np.array(psa_vals)
         hb_arr  = np.array(hb_vals, dtype=float)
-        weights = boltzmann_weights(energies)
+        try:
+            weights = boltzmann_weights(energies)
+        except RuntimeError as e:
+            _log(f"  ⚠ Boltzmann weighting failed ({e}) — skipping {label}")
+            result[f"{label}_status"] = "failed"
+            result[f"{label}_error"]  = str(e)
+            failed_solvents.append(label)
+            continue
         valid_w = np.isfinite(weights)
 
         psa_boltz = float(np.dot(weights[valid_w], psa_arr[valid_w]))

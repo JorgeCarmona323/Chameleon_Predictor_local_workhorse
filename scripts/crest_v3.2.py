@@ -123,6 +123,19 @@ REFERENCE_COMPOUNDS = [
         "permeable": False,
         "hbd": None,
     },
+    {
+        "name": "1NMe3",
+        "short": "1NMe3",
+        "cycpeptmpdb_id": 980,
+        "smiles": (
+            "CC(C)C[C@@H]1NC(=O)[C@H](Cc2ccc(O)cc2)N(C)C(=O)[C@H]2CCCN2C(=O)"
+            "[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@@H](CC(C)C)N(C)C1=O"
+        ),
+        "source": "Bockus, J Med Chem 2015",
+        "pampa": -5.52,
+        "permeable": True,
+        "hbd": 3,
+    },
 ]
 
 SOLVENT_AQ  = "water"
@@ -958,6 +971,7 @@ Compound index:
   2 = PSLYF   (impermeable, 11-mer)
   3 = DP-955  (permeable,   15-mer)
   4 = DP-944  (impermeable, 15-mer)
+  5 = 1NMe3   (permeable,    6-mer, Bockus 2015)
         """
     )
     parser.add_argument("--outdir",    "-o", default="results", type=Path)

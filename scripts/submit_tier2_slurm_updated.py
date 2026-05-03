@@ -35,6 +35,7 @@ COMPOUNDS = [
     {"idx": 2, "short": "PSLYF",  "name": "c*[PSLYF]",     "permeable": False},
     {"idx": 3, "short": "DP955",  "name": "DP-955",        "permeable": True},
     {"idx": 4, "short": "DP944",  "name": "DP-944",        "permeable": False},
+    {"idx": 5, "short": "1NMe3",  "name": "1NMe3",          "permeable": True},
 ]
 
 

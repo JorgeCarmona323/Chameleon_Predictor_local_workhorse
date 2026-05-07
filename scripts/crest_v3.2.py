@@ -962,17 +962,19 @@ def process_compound(cpd: dict, work_base: Path,
               f"(low-energy={psa_arr[0]:.1f}, mean={psa_arr.mean():.1f})")
         print(f"      HB  (Boltzmann): {hb_boltz:.2f}  (low-energy={int(hb_arr[0])})")
 
-        # ── Parse crest.out for thermodynamics ────────────────────────────────
-        crest_out = sol_dir / "crest" / "crest.out"
+        # ── Parse CREST log for thermodynamics ───────────────────────────────
+        # Prefer crest_cregen.out (written by --cregen runs) over crest.out
         crest_log = None
-        if crest_out.exists():
-            crest_log = parse_crest_log(crest_out)
-            if crest_log:
-                _log(f"      crest.out parsed: {crest_log.get('uniqueconfs','?')} unique confs")
-            else:
-                _log(f"      crest.out found but could not parse thermodynamics")
-        else:
-            _log(f"      crest.out not found at {crest_out} — JSON will omit thermodynamics")
+        for log_candidate in [sol_dir / "crest" / "crest_cregen.out",
+                               sol_dir / "crest" / "crest.out"]:
+            if log_candidate.exists():
+                crest_log = parse_crest_log(log_candidate)
+                if crest_log:
+                    _log(f"      {log_candidate.name} parsed: "
+                         f"{crest_log.get('uniqueconfs','?')} unique confs")
+                    break
+        if not crest_log:
+            _log(f"      No parseable CREST log found — JSON will omit thermodynamics")
 
         # ── Export SDF ────────────────────────────────────────────────────────
         sdf_path = sol_dir / "ensemble.sdf"
@@ -1014,6 +1016,28 @@ def process_compound(cpd: dict, work_base: Path,
     return result
 
 
+# ── Auto-resume: find most recent partial run for this compound ───────────────
+def _find_resume_dir(runs_base: Path, compound_idx: int, short: str) -> Path | None:
+    """Return the most recent run dir that has checkpoint data (rotamers or ensemble)."""
+    if not runs_base.exists():
+        return None
+    checkpoint_paths = [
+        f"{label}/crest/crest_conformers.xyz"
+        for label in ("water", "mem")
+    ] + [
+        f"{label}/crest/crest_rotamers_0.xyz"
+        for label in ("water", "mem")
+    ]
+    candidates = sorted(
+        runs_base.glob(f"run_*_{compound_idx}_{short}"),
+        reverse=True,  # most recent timestamp first
+    )
+    for d in candidates:
+        if any((d / p).exists() for p in checkpoint_paths):
+            return d
+    return None
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 def run(outdir: Path, max_confs: int | None, dry_run: bool,
         compound_idx: int | None = None, n_threads: int | None = None) -> None:
@@ -1028,12 +1052,18 @@ def run(outdir: Path, max_confs: int | None, dry_run: bool,
     cpd   = REFERENCE_COMPOUNDS[compound_idx]
     short = cpd["short"]
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_id    = f"run_{timestamp}_{compound_idx}_{short}"
-    work_base = outdir / "runs" / run_id
-    work_base.mkdir(parents=True, exist_ok=True)
-    print(f"\n[Compound {compound_idx}] {cpd['name']}")
-    print(f"Run directory: {work_base}")
+    resume_dir = _find_resume_dir(outdir / "runs", compound_idx, short)
+    if resume_dir is not None:
+        work_base = resume_dir
+        print(f"\n[Compound {compound_idx}] {cpd['name']}  ← resuming")
+        print(f"Run directory: {work_base}")
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_id    = f"run_{timestamp}_{compound_idx}_{short}"
+        work_base = outdir / "runs" / run_id
+        work_base.mkdir(parents=True, exist_ok=True)
+        print(f"\n[Compound {compound_idx}] {cpd['name']}")
+        print(f"Run directory: {work_base}")
 
     r = process_compound(cpd, work_base, max_confs, dry_run, n_threads)
 

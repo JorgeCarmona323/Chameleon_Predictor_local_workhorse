@@ -393,6 +393,52 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
     return None
 
 
+# ── CREST cregen: refinement from existing rotamers, skipping MTDs ────────────
+def run_crest_cregen(xyz_path: Path, work_dir: Path, solvent: str,
+                     n_threads: int, charge: int = 0) -> Path | None:
+    """Run CREST --cregen on existing crest_rotamers_0.xyz, skipping the MTD phase."""
+    rotamers = work_dir.resolve() / "crest_rotamers_0.xyz"
+    if not rotamers.exists() or rotamers.stat().st_size == 0:
+        _log(f"    CREST --cregen: crest_rotamers_0.xyz not found in {work_dir}")
+        return None
+
+    cmd = [
+        "crest", str(xyz_path.resolve()),
+        "--cregen",
+        "-T",     str(n_threads),
+        "--gfn2",
+        "--chrg", str(charge),
+        "--alpb", solvent,
+    ]
+
+    _log(f"    CREST --cregen: {' '.join(cmd)}")
+    _log(f"    CREST --cregen: refining {rotamers.stat().st_size/1e6:.0f} MB rotamers file")
+    t0 = time.time()
+    out_path = work_dir / "crest_cregen.out"
+    err_path = work_dir / "crest_cregen.err"
+    with open(out_path, "w") as fout, open(err_path, "w") as ferr:
+        proc = subprocess.run(
+            cmd, cwd=work_dir.resolve(),
+            stdout=fout, stderr=ferr,
+        )
+
+    elapsed = time.time() - t0
+    ensemble = work_dir.resolve() / "crest_conformers.xyz"
+    if proc.returncode != 0:
+        _log(f"    CREST --cregen: FAILED after {elapsed:.0f}s (exit={proc.returncode})")
+        try:
+            tail = err_path.read_text().splitlines()[-20:]
+            print("\n".join(f"      ERR: {l}" for l in tail), flush=True)
+        except Exception:
+            pass
+        return None
+    if ensemble.exists() and ensemble.stat().st_size > 0:
+        _log(f"    CREST --cregen: finished in {elapsed/3600:.2f}h — ensemble found")
+        return ensemble
+    _log(f"    CREST --cregen: finished with exit=0 but no ensemble after {elapsed:.0f}s")
+    return None
+
+
 # ── Parse crest.out → CREMP-format thermodynamics ─────────────────────────────
 def parse_crest_log(crest_out_path: Path) -> dict | None:
     """
@@ -799,31 +845,54 @@ def process_compound(cpd: dict, work_base: Path,
             result[f"{label}_status"]    = "dry_run"
             continue
 
-        # Step 2: xTB pre-opt
-        xtb_dir = sol_dir / "xtb_opt"
-        _log(f"  Step 2: xTB pre-opt ({mol_embedded.GetNumConformers()} conformers)...")
-        mol_min = xtb_preopt_mol(mol_embedded, solvent, xtb_dir, charge,
-                                 n_procs=n_threads)
-        if mol_min is None:
-            _log(f"  ⚠ All xTB jobs failed — skipping {label}")
-            result[f"{label}_status"] = "failed"
-            result[f"{label}_error"]  = "all xTB jobs failed"
-            failed_solvents.append(label)
-            continue
-
-        # Step 3: CREST
+        # ── Checkpoint: skip xTB + CREST if ensemble already exists ─────────────
         crest_dir = sol_dir / "crest"
-        crest_dir.mkdir(parents=True, exist_ok=True)
-        xyz_in = crest_dir / f"{short}_{label}_start.xyz"
-        _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(),
-                             xyz_in, comment=smi)
-        _log(f"  Step 3: CREST iMTD-GC ({solvent})...")
-        try:
-            raw_ensemble = run_crest(xyz_in, crest_dir, solvent,
-                                     n_threads, charge)
-        except Exception as e:
-            print(f"      ⚠ CREST error: {e}")
-            raw_ensemble = None
+        xyz_in    = crest_dir / f"{short}_{label}_start.xyz"
+        existing_ensemble = crest_dir / "crest_conformers.xyz"
+        existing_rotamers = crest_dir / "crest_rotamers_0.xyz"
+
+        if existing_ensemble.exists() and existing_ensemble.stat().st_size > 0:
+            _log(f"  Steps 2-3: existing CREST ensemble found "
+                 f"({existing_ensemble.stat().st_size/1e6:.0f} MB) — skipping xTB + CREST")
+            raw_ensemble = existing_ensemble
+        else:
+            # Step 2: xTB pre-opt
+            xtb_dir = sol_dir / "xtb_opt"
+            _log(f"  Step 2: xTB pre-opt ({mol_embedded.GetNumConformers()} conformers)...")
+            mol_min = xtb_preopt_mol(mol_embedded, solvent, xtb_dir, charge,
+                                     n_procs=n_threads)
+            if mol_min is None:
+                _log(f"  ⚠ All xTB jobs failed — skipping {label}")
+                result[f"{label}_status"] = "failed"
+                result[f"{label}_error"]  = "all xTB jobs failed"
+                failed_solvents.append(label)
+                continue
+
+            crest_dir.mkdir(parents=True, exist_ok=True)
+
+            # Step 3: CREST — cregen from existing rotamers, or full iMTD-GC
+            if existing_rotamers.exists() and existing_rotamers.stat().st_size > 0:
+                _log(f"  Step 3: rotamers found ({existing_rotamers.stat().st_size/1e6:.0f} MB)"
+                     f" — running --cregen to skip MTDs")
+                if not xyz_in.exists():
+                    _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(),
+                                         xyz_in, comment=smi)
+                try:
+                    raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent,
+                                                    n_threads, charge)
+                except Exception as e:
+                    print(f"      ⚠ CREST --cregen error: {e}")
+                    raw_ensemble = None
+            else:
+                _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(),
+                                     xyz_in, comment=smi)
+                _log(f"  Step 3: CREST iMTD-GC ({solvent})...")
+                try:
+                    raw_ensemble = run_crest(xyz_in, crest_dir, solvent,
+                                             n_threads, charge)
+                except Exception as e:
+                    print(f"      ⚠ CREST error: {e}")
+                    raw_ensemble = None
 
         if raw_ensemble is None:
             result[f"{label}_status"] = "failed"
@@ -917,6 +986,11 @@ def process_compound(cpd: dict, work_base: Path,
         export_json(conformers, psa_vals, hb_vals, weights,
                     smi, charge, crest_log, json_path)
         _log(f"      JSON written → {json_path.name}")
+
+        # ── Checkpoint: save partial CSV after each solvent ───────────────────
+        partial_csv = work_base / f"{short}_results_partial.csv"
+        pd.DataFrame([result]).to_csv(partial_csv, index=False)
+        _log(f"      Checkpoint saved → {partial_csv.name}")
 
     if failed_solvents:
         _log(f"  WARNING: {short} failed for solvent(s): {', '.join(sorted(set(failed_solvents)))}")

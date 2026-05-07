@@ -855,6 +855,16 @@ def process_compound(cpd: dict, work_base: Path,
             _log(f"  Steps 2-3: existing CREST ensemble found "
                  f"({existing_ensemble.stat().st_size/1e6:.0f} MB) — skipping xTB + CREST")
             raw_ensemble = existing_ensemble
+        elif existing_rotamers.exists() and existing_rotamers.stat().st_size > 0 and xyz_in.exists():
+            # MTDs finished and start xyz exists — skip xTB entirely, run cregen only
+            _log(f"  Steps 2-3: rotamers found ({existing_rotamers.stat().st_size/1e6:.0f} MB)"
+                 f" + start xyz exists — skipping xTB, running --cregen")
+            try:
+                raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent,
+                                                n_threads, charge)
+            except Exception as e:
+                print(f"      ⚠ CREST --cregen error: {e}")
+                raw_ensemble = None
         else:
             # Step 2: xTB pre-opt
             xtb_dir = sol_dir / "xtb_opt"
@@ -870,13 +880,12 @@ def process_compound(cpd: dict, work_base: Path,
 
             crest_dir.mkdir(parents=True, exist_ok=True)
 
-            # Step 3: CREST — cregen from existing rotamers, or full iMTD-GC
+            # Step 3: CREST — cregen from existing rotamers (no start xyz yet), or full iMTD-GC
             if existing_rotamers.exists() and existing_rotamers.stat().st_size > 0:
                 _log(f"  Step 3: rotamers found ({existing_rotamers.stat().st_size/1e6:.0f} MB)"
                      f" — running --cregen to skip MTDs")
-                if not xyz_in.exists():
-                    _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(),
-                                         xyz_in, comment=smi)
+                _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(),
+                                     xyz_in, comment=smi)
                 try:
                     raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent,
                                                     n_threads, charge)

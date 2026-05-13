@@ -33,7 +33,7 @@ echo "GPU:     $(python -c 'import torch; print(torch.cuda.get_device_name(0) if
 echo "mace:    $(python -c 'import mace; print(mace.__version__)' 2>/dev/null || echo 'not installed')"
 echo "=== Starting benchmark ==="
 
-python scripts/benchmark_mace_vs_xtb.py
+python scripts/benchmark_mace_vs_xtb.py --model models/MACE-OFF23_medium.model
 
 echo "=== Done ==="
 echo "Results: results/mace_vs_xtb_CsA_water.csv"

@@ -29,12 +29,21 @@ from pathlib import Path
 import numpy as np
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-DATA_DIR = Path("data/CREST_CsA_20260512")
-XYZ_PATH = DATA_DIR / "ensemble.xyz"
-JSON_PATH = DATA_DIR / "ensemble.json"
+def _find_csa_water_ensemble() -> tuple[Path, Path]:
+    candidates = [
+        Path("data/CREST_CsA_20260512"),
+        *sorted(Path("results/runs").glob("*_CsA/water"), reverse=True),
+    ]
+    for d in candidates:
+        xyz = d / "ensemble.xyz"
+        jsn = d / "ensemble.json"
+        if xyz.exists() and jsn.exists():
+            return xyz, jsn
+    sys.exit("ERROR: CsA water ensemble not found. Expected ensemble.xyz + ensemble.json in "
+             "data/CREST_CsA_20260512/ or results/runs/*_CsA/water/")
 
-if not XYZ_PATH.exists():
-    sys.exit(f"ERROR: {XYZ_PATH} not found. Run from the project root.")
+XYZ_PATH, JSON_PATH = _find_csa_water_ensemble()
+print(f"Using ensemble: {XYZ_PATH}")
 
 # ── Parse multi-frame XYZ ─────────────────────────────────────────────────────
 def parse_xyz_ensemble(path: Path) -> list:

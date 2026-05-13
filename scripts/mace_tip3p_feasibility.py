@@ -111,17 +111,39 @@ solute_pos_ang = np.array(
 print("Assigning partial charges ...")
 off_mol = OFFMolecule.from_rdkit(rdmol, allow_undefined_stereo=True)
 
-# am1bcc is unreliable for >150 atoms; use gasteiger for feasibility test
+# Charge method priority:
+#   1. NAGL (neural net, reproduces AM1-BCC accuracy, no atom size limit, fast)
+#   2. AM1-BCC (semi-empirical QM, standard for GAFF; slow/unreliable >150 atoms)
+#   3. Gasteiger (empirical fallback, fast, less accurate for solute-water interactions)
+# For production conformer sampling in water, NAGL or AM1-BCC is required.
+# Gasteiger charges will underestimate solute-water electrostatics.
 charge_assigned = False
-methods = ["gasteiger"] if n_solute > 150 else ["am1bccelf10", "am1bcc", "gasteiger"]
+nagl_methods = _get_nagl_methods()  # populated below
+methods = nagl_methods + ["am1bcc", "gasteiger"]
+
+def _get_nagl_methods() -> list[str]:
+    try:
+        import openff.nagl_models as nm
+        models = nm.list_available_nagl_models()
+        # prefer am1bcc-trained models
+        return [m for m in models if "am1bcc" in m.lower()] or list(models)[:1]
+    except Exception:
+        return []
+
+nagl_methods = _get_nagl_methods()
+methods = nagl_methods + ["am1bcc", "gasteiger"]
+
 for method in methods:
     try:
         off_mol.assign_partial_charges(method)
         print(f"  Charge method: {method}")
+        if method == "gasteiger":
+            print("  WARNING: Gasteiger charges will underestimate solute-water "
+                  "electrostatics. Install openff-nagl or use AM1-BCC for production.")
         charge_assigned = True
         break
     except Exception as e:
-        print(f"  {method} failed: {e}")
+        print(f"  {method} failed: {type(e).__name__}")
 
 if not charge_assigned:
     sys.exit("ERROR: Could not assign partial charges. "

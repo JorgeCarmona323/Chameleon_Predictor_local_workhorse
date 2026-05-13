@@ -18,12 +18,7 @@ mkdir -p logs results
 
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 
-# Use dedicated mace env if it exists, otherwise try to use base
-if conda env list | grep -q "^mace-env"; then
-    conda activate mace-env
-else
-    conda activate base
-fi
+conda activate MACE
 
 echo "=== Environment ==="
 echo "Python:  $(which python)"

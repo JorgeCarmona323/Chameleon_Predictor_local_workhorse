@@ -111,8 +111,10 @@ solute_pos_ang = np.array(
 print("Assigning partial charges ...")
 off_mol = OFFMolecule.from_rdkit(rdmol, allow_undefined_stereo=True)
 
+# am1bcc is unreliable for >150 atoms; use gasteiger for feasibility test
 charge_assigned = False
-for method in ["am1bccelf10", "am1bcc", "gasteiger"]:
+methods = ["gasteiger"] if n_solute > 150 else ["am1bccelf10", "am1bcc", "gasteiger"]
+for method in methods:
     try:
         off_mol.assign_partial_charges(method)
         print(f"  Charge method: {method}")

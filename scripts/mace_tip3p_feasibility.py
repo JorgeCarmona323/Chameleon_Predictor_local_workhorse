@@ -117,22 +117,18 @@ off_mol = OFFMolecule.from_rdkit(rdmol, allow_undefined_stereo=True)
 #   3. Gasteiger (empirical fallback, fast, less accurate for solute-water interactions)
 # For production conformer sampling in water, NAGL or AM1-BCC is required.
 # Gasteiger charges will underestimate solute-water electrostatics.
-charge_assigned = False
-nagl_methods = _get_nagl_methods()  # populated below
-methods = nagl_methods + ["am1bcc", "gasteiger"]
-
 def _get_nagl_methods() -> list[str]:
     try:
         import openff.nagl_models as nm
         models = [str(m) for m in nm.list_available_nagl_models()
                   if "am1bcc" in str(m).lower()]
-        # stable (1.0.0) before rc before alpha
         def _rank(p):
             return 2 if "alpha" in p else 1 if "rc" in p else 0
         return sorted(models, key=_rank)
     except Exception:
         return []
 
+charge_assigned = False
 nagl_methods = _get_nagl_methods()
 methods = nagl_methods + ["am1bcc", "gasteiger"]
 

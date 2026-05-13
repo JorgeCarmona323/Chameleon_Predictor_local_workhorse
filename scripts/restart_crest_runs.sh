@@ -7,10 +7,10 @@
 #SBATCH --output=%x_%j.out
 #SBATCH --error=%x_%j.err
 
-# Restart CREST for CsA, DP955, DP944 — all 14 MTDs completed but post-MTD
-# processing was killed by the 24h script timeout. Running crest --restart in
-# each existing directory regenerates crest_rotamers_0.xyz from the METADYN
-# dirs (if missing) and resumes multilevel optimization from where it stopped.
+# Restart CREST for CsA — all 14 MTDs completed but post-MTD processing was
+# killed by the 24h script timeout. crest_rotamers_0.xyz (853 MB) is present
+# for both aq and mem; --restart resumes multilevel optimization from structure
+# 4271/69986. DP955 and DP944 MTDs were incomplete — submit those fresh.
 
 set -e
 
@@ -26,10 +26,6 @@ export MKL_NUM_THREADS=1
 RUNS=(
     "run_20260429_173210_1_CsA:CsA_aq_start.xyz:water:water"
     "run_20260429_173210_1_CsA:CsA_mem_start.xyz:chcl3:mem"
-    "run_20260429_173210_3_DP955:DP955_aq_start.xyz:water:water"
-    "run_20260429_173210_3_DP955:DP955_mem_start.xyz:chcl3:mem"
-    "run_20260429_173210_4_DP944:DP944_aq_start.xyz:water:water"
-    "run_20260429_173210_4_DP944:DP944_mem_start.xyz:chcl3:mem"
 )
 
 for entry in "${RUNS[@]}"; do

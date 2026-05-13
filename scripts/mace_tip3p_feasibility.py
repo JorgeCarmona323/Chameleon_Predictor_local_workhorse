@@ -124,9 +124,12 @@ methods = nagl_methods + ["am1bcc", "gasteiger"]
 def _get_nagl_methods() -> list[str]:
     try:
         import openff.nagl_models as nm
-        models = nm.list_available_nagl_models()
-        # prefer am1bcc-trained models
-        return [m for m in models if "am1bcc" in m.lower()] or list(models)[:1]
+        models = [str(m) for m in nm.list_available_nagl_models()
+                  if "am1bcc" in str(m).lower()]
+        # stable (1.0.0) before rc before alpha
+        def _rank(p):
+            return 2 if "alpha" in p else 1 if "rc" in p else 0
+        return sorted(models, key=_rank)
     except Exception:
         return []
 

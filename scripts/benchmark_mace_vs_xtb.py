@@ -22,11 +22,17 @@ Outputs:
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from pathlib import Path
 
 import numpy as np
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--model", default="MACE-OFF23(M)",
+                    help="MACE model name or path to local .model file")
+args = parser.parse_args()
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 def _find_csa_water_ensemble() -> tuple[Path, Path]:
@@ -127,7 +133,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"\nRunning MACE-OFF23(M) on {device} ...")
 print("  (first run downloads ~200 MB model weights — cached after that)\n")
 
-calc = mace_off(model="MACE-OFF23(M)", device=device, default_dtype="float64")
+calc = mace_off(model=args.model, device=device, default_dtype="float64")
 
 EV_TO_KCAL = 23.0609
 mace_energies = []

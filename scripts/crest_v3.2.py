@@ -79,6 +79,22 @@ REFERENCE_COMPOUNDS = [
         "hbd": 5,
     },
     {
+        "name": "Cyclosporin O",
+        "short": "CsO",
+        "cycpeptmpdb_id": None,
+        "smiles": (
+            "CCC[C@H]1C(=O)N(CC(=O)N([C@H](C(=O)N[C@H](C(=O)N([C@H](C(=O)N[C@H]"
+            "(C(=O)N[C@@H](C(=O)N([C@H](C(=O)N([C@H](C(=O)N([C@H](C(=O)N([C@H]"
+            "(C(=O)N1)CC(C)C)C)C(C)C)C)CC(C)C)C)CC(C)C)C)C)C)CC(C)C)C)C(C)C)"
+            "CC(C)C)C)C"
+        ),
+        "source": "Horizon-LBA Ono et al. Chem. Sci. 2023; LPE Naylor et al. J. Med. Chem. 2018",
+        "pampa": None,
+        "permeable": True,
+        "hbd": 4,
+        "horizon_lba_papp": 3e-6,  # cm/s; similar to CsA per Ono 2023
+    },
+    {
         "name": "c*[PSLYF]",
         "short": "PSLYF",
         "cycpeptmpdb_id": 1829,

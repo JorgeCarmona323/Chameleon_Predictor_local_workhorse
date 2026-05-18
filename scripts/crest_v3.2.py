@@ -284,15 +284,11 @@ def _xtb_opt_worker(args):
     xtb_err = conf_dir / "xtb.err"
     try:
         proc = subprocess.run(
-            cmd, cwd=conf_dir, env=env, timeout=3600,
+            cmd, cwd=conf_dir, env=env,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False,
         )
         xtb_out.write_text(proc.stdout or "")
         xtb_err.write_text(proc.stderr or "")
-    except subprocess.TimeoutExpired as e:
-        xtb_out.write_text((e.stdout or "") if isinstance(e.stdout, str) else "")
-        xtb_err.write_text((e.stderr or "") if isinstance(e.stderr, str) else "")
-        return None
 
     if proc.returncode != 0:
         return None

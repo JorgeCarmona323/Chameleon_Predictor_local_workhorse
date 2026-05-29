@@ -43,7 +43,7 @@ from pathlib import Path
 
 # ── Configuration — edit these for the cluster ────────────────────────────────
 PARTITION   = "all"               # SLURM partition (run `sinfo` to list available)
-CONDA_ENV   = "chameleon"         # conda environment with crest + xtb + rdkit
+CONDA_ENV   = "chameleon_crest212" # conda environment with crest 2.12 + xtb + rdkit
 CONDA_SH    = "~/miniconda3/etc/profile.d/conda.sh"
 CPUS        = 20                  # CPUs per compound job (= --threads passed to CREST)
 MEM         = "32G"               # RAM per job

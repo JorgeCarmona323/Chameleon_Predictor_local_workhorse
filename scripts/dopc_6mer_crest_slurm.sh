@@ -14,7 +14,7 @@ cd "$REPO_DIR"
 mkdir -p results/slurm_logs results/runs
 
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate chameleon
+conda activate chameleon_crest212
 
 COMPOUND=$1
 echo "===== 6-mer CREST run compound=$COMPOUND — $(date) ====="

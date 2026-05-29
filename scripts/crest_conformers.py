@@ -152,7 +152,7 @@ def _xtb_opt_worker(args):
     if xtb_exe is None:
         return None
 
-    cmd = [xtb_exe, "conf.xyz", "--opt", "tight", "--gfn", "2", "--chrg", str(charge)]
+    cmd = [xtb_exe, "conf.xyz", "--opt", "--gfn", "2", "--chrg", str(charge)]
     if solvent:
         model = "gbsa" if solvent.lower() == "methanol" else "alpb"
         cmd.extend([f"--{model}", solvent])
@@ -168,13 +168,14 @@ def _xtb_opt_worker(args):
         xtb_out.write_text(proc.stdout or "")
         xtb_err.write_text(proc.stderr or "")
 
+        if proc.returncode != 0:
+            return None
     except Exception:
         return None
 
     opt_xyz = conf_dir / "xtbopt.xyz"
     if not opt_xyz.exists():
         return None
-    # Accept partially converged geometries (e.g. hit --cycles limit)
 
     try:
         with open(opt_xyz) as f:
@@ -257,7 +258,6 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
         "--keepdir",
         "--noreftopo",
         "-notopo",
-        "--len",   "10",
     ]
 
     _log(f"    CREST: {' '.join(cmd)}")

@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=cso_crest
-#SBATCH --output=logs/cso_crest_%j.log
-#SBATCH --error=logs/cso_crest_%j.err
+#SBATCH --output=results/slurm_logs/cso_crest_%j.out
+#SBATCH --error=results/slurm_logs/cso_crest_%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=32G

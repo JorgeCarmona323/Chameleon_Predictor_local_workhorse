@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=dopc_6mer_crest
-#SBATCH --output=logs/dopc_6mer_crest_%j.log
-#SBATCH --error=logs/dopc_6mer_crest_%j.err
+#SBATCH --output=results/slurm_logs/dopc_6mer_crest_%j.out
+#SBATCH --error=results/slurm_logs/dopc_6mer_crest_%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=32G
@@ -11,7 +11,7 @@ set -euo pipefail
 
 REPO_DIR="$HOME/Chameleon_Predictor"
 cd "$REPO_DIR"
-mkdir -p logs results
+mkdir -p results/slurm_logs results/runs
 
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate chameleon

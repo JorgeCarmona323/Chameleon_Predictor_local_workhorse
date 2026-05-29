@@ -70,7 +70,7 @@ COMPOUNDS = [
 
 
 def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
-                       repo_root: str, logs_dir: str) -> str:
+                       repo_root: str, logs_dir: str, resume: bool = False) -> str:
     """
     Return a SLURM batch script string for one compound.
     repo_root: absolute path to the Chameleon_Predictor directory on the cluster.
@@ -110,7 +110,7 @@ def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
         python {SCRIPT_PATH} \\
             --compound {idx} \\
             --threads  {cpus} \\
-            --outdir   {OUTDIR}
+            --outdir   {OUTDIR}{" \\\n            --resume" if resume else ""}
 
         EXIT_CODE=$?
         echo "Finished: $(date)  |  exit=$EXIT_CODE"
@@ -191,6 +191,10 @@ def parse_args() -> argparse.Namespace:
         help="Print SLURM scripts without submitting.",
     )
     p.add_argument(
+        "--resume", action="store_true",
+        help="Resume a previous incomplete run instead of starting fresh.",
+    )
+    p.add_argument(
         "--test-slurm", action="store_true",
         help="Submit a minimal SLURM job that runs CREST directly (no Python) "
              "to verify CREST works in the SLURM environment.",
@@ -257,7 +261,8 @@ def main() -> None:
 
     for cpd in selected:
         script = build_crest_script(
-            cpd, args.cpus, args.mem, args.time_limit, repo_root, logs_dir
+            cpd, args.cpus, args.mem, args.time_limit, repo_root, logs_dir,
+            resume=args.resume,
         )
         if args.dry_run:
             print(f"{'─'*60}")

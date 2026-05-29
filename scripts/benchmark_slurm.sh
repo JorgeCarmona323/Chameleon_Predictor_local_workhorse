@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=feat_bench
-#SBATCH --output=logs/benchmark_%j.log
-#SBATCH --error=logs/benchmark_%j.err
+#SBATCH --output=results/slurm_logs/benchmark_%j.out
+#SBATCH --error=results/slurm_logs/benchmark_%j.err
 #SBATCH --time=02:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -13,7 +13,7 @@ set -euo pipefail
 REPO_DIR="$HOME/Chameleon_Predictor"
 cd "$REPO_DIR"
 
-mkdir -p logs results
+mkdir -p results/slurm_logs results/runs
 
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate chameleon

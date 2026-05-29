@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=mace_tip3p
-#SBATCH --output=logs/mace_tip3p_%j.log
-#SBATCH --error=logs/mace_tip3p_%j.err
+#SBATCH --output=results/slurm_logs/mace_tip3p_%j.out
+#SBATCH --error=results/slurm_logs/mace_tip3p_%j.err
 #SBATCH --time=04:00:00
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -12,7 +12,7 @@
 set -euo pipefail
 
 cd "$HOME/Chameleon_Predictor"
-mkdir -p logs results
+mkdir -p results/slurm_logs results
 
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate MACE

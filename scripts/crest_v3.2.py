@@ -108,38 +108,6 @@ REFERENCE_COMPOUNDS = [
         "hbd": 8,
     },
     {
-        "name": "DP-955",
-        "short": "DP955",
-        "cycpeptmpdb_id": 917,
-        "smiles": (
-            "CC[C@H](C)[C@H](NC(=O)[C@@H]1CC(=O)N[C@@H](C)C(=O)N[C@@H]([C@@H](C)O)"
-            "C(=O)N(C)CC(=O)N[C@@H](CC(C)C)C(=O)N2CCC[C@H]2C(=O)N(C)[C@@H](CC(C)C)"
-            "C(=O)N[C@@H](Cc2ccccc2)C(=O)N(C)[C@@H](Cc2ccccc2)C(=O)N(C)[C@@H](C)C(=O)"
-            "N(C)[C@@H](CC(C)C)C(=O)N[C@@H](C)C(=O)N(C)[C@@H](CC(C)C)C(=O)N1)"
-            "C(=O)N1CCCCC1"
-        ),
-        "source": "CHUGAI 2013",
-        "pampa": -5.20,
-        "permeable": True,
-        "hbd": None,
-    },
-    {
-        "name": "DP-944",
-        "short": "DP944",
-        "cycpeptmpdb_id": 906,
-        "smiles": (
-            "CC[C@H](C)[C@H](NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@H](CC(C)C)NC(=O)[C@H](C)"
-            "N(C)C(=O)[C@@H]1CC(=O)N[C@H](C(C)C)C(=O)N(C)[C@@H](CC(C)C)C(=O)N(C)"
-            "[C@@H](CC(C)C)C(=O)N[C@@H](C)C(=O)N[C@@H](Cc2ccccc2)C(=O)N[C@@H]([C@@H](C)O)"
-            "C(=O)N[C@@H](CC(C)C)C(=O)N(C)[C@@H](Cc2ccccc2)C(=O)N(C)[C@@H](CC(C)C)"
-            "C(=O)N1)C(=O)N1CCCCC1"
-        ),
-        "source": "CHUGAI 2013",
-        "pampa": -7.00,
-        "permeable": False,
-        "hbd": None,
-    },
-    {
         "name": "White_compd3",
         "short": "WhC3",
         "cycpeptmpdb_id": 25,
@@ -151,6 +119,58 @@ REFERENCE_COMPOUNDS = [
         "pampa": -5.31,  # RRCK assay; no PAMPA measurement available
         "permeable": True,
         "hbd": 3,  # 2 amide NH + Tyr phenol OH
+    },
+    {
+        "name": "DOPC_3-12-8-12_R",
+        "short": "DOPC_R",
+        "cycpeptmpdb_id": None,
+        "smiles": (
+            "C#CCCC(=O)N[C@H]1CSCc2ccccc2CSC[C@@H](C(N)=O)NC(=O)[C@H](c2cccs2)"
+            "NC(=O)[C@H](CO)NC(=O)[C@@H]2CCN2C(=O)[C@H](CO)NC1=O"
+        ),
+        "source": "Hu lab — DOPC 3-12-8-12 R isomer",
+        "pampa": None,
+        "permeable": True,
+        "hbd": None,
+    },
+    {
+        "name": "DOPC_3-12-8-12_S",
+        "short": "DOPC_S",
+        "cycpeptmpdb_id": None,
+        "smiles": (
+            "C#CCCC(=O)N[C@H]1CSCc2ccccc2CSC[C@@H](C(N)=O)NC(=O)[C@@H](c2cccs2)"
+            "NC(=O)[C@H](CO)NC(=O)[C@@H]2CCN2C(=O)[C@H](CO)NC1=O"
+        ),
+        "source": "Hu lab — DOPC 3-12-8-12 S isomer",
+        "pampa": None,
+        "permeable": True,
+        "hbd": None,
+    },
+    {
+        "name": "Brain_6-4-4-13",
+        "short": "Brain1",
+        "cycpeptmpdb_id": None,
+        "smiles": (
+            "C#CCCC(=O)N[C@H]1CSCc2ccccc2CSC[C@@H](C(N)=O)NC(=O)C[C@@H](c2cccc3ccccc23)"
+            "NC(=O)[C@H](C)NC(=O)[C@@H]2CCCCN2C(=O)[C@@H](CO)NC1=O"
+        ),
+        "source": "Hu lab — Brain 6-4-4-13 (naphthalene)",
+        "pampa": None,
+        "permeable": True,
+        "hbd": None,
+    },
+    {
+        "name": "DOPC_6-5-8-12",
+        "short": "DOPC2",
+        "cycpeptmpdb_id": None,
+        "smiles": (
+            "C#CCCC(=O)N[C@H]1CSCc2ccccc2CSC[C@@H](C(N)=O)NC(=O)C[C@@H](c2cccc3ccccc23)"
+            "NC(=O)[C@H]([C@@H](C)O)NC(=O)[C@@H]2CCN2C(=O)[C@H](CO)NC1=O"
+        ),
+        "source": "Hu lab — DOPC 6-5-8-12 (naphthalene)",
+        "pampa": None,
+        "permeable": True,
+        "hbd": None,
     },
 ]
 
@@ -1099,12 +1119,15 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Compound index:
-  0 = HexPep  (impermeable,  6-mer)
-  1 = CsA     (permeable,   11-mer)
-  2 = PSLYF   (impermeable, 11-mer)
-  3 = DP-955  (permeable,   15-mer)
-  4 = DP-944  (impermeable, 15-mer)
-  5 = WhC3    (permeable,    6-mer, White 2011 compd.3, RRCK=-5.31)
+  0 = HexPep   (impermeable,  6-mer)
+  1 = CsA      (permeable,   11-mer)
+  2 = CsO      (permeable,   11-mer)
+  3 = PSLYF    (impermeable, 11-mer)
+  4 = WhC3     (permeable,    6-mer, White 2011 compd.3, RRCK=-5.31)
+  5 = DOPC_R   (permeable,    6-mer, DOPC 3-12-8-12 R isomer)
+  6 = DOPC_S   (permeable,    6-mer, DOPC 3-12-8-12 S isomer)
+  7 = Brain1   (permeable,    6-mer, Brain 6-4-4-13, naphthalene)
+  8 = DOPC2    (permeable,    6-mer, DOPC 6-5-8-12, naphthalene)
         """
     )
     parser.add_argument("--outdir",    "-o", default="results", type=Path)

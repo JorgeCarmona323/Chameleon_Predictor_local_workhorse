@@ -172,6 +172,21 @@ REFERENCE_COMPOUNDS = [
         "permeable": True,
         "hbd": None,
     },
+    {
+        "name": "Cyclosporin A",
+        "short": "CsA_v2",
+        "cycpeptmpdb_id": 1,
+        "smiles": (
+            "C/C=C/C[C@@H](C)[C@@H](O)[C@H]1C(=O)N[C@@H](CC)C(=O)N(C)CC(=O)"
+            "N(C)[C@@H](CC(C)C)C(=O)N[C@@H](C(C)C)C(=O)N(C)[C@@H](CC(C)C)C(=O)"
+            "N[C@@H](C)C(=O)N[C@H](C)C(=O)N(C)[C@@H](CC(C)C)C(=O)N(C)[C@@H](CC(C)C)"
+            "C(=O)N(C)[C@@H](C(C)C)C(=O)N1C"
+        ),
+        "source": "Witek JCTC 2016 — rerun with --noreftopo -notopo",
+        "pampa": -5.90,
+        "permeable": True,
+        "hbd": 5,
+    },
 ]
 
 SOLVENT_AQ  = "water"
@@ -1134,6 +1149,7 @@ Compound index:
   6 = DOPC_S   (permeable,    6-mer, DOPC 3-12-8-12 S isomer)
   7 = Brain1   (permeable,    6-mer, Brain 6-4-4-13, naphthalene)
   8 = DOPC2    (permeable,    6-mer, DOPC 6-5-8-12, naphthalene)
+  9 = CsA_v2  (permeable,   11-mer, CsA rerun with --noreftopo -notopo)
         """
     )
     parser.add_argument("--outdir",    "-o", default="results", type=Path)

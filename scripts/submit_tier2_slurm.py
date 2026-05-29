@@ -65,6 +65,7 @@ COMPOUNDS = [
     {"idx": 6, "short": "DOPC_S",  "name": "DOPC_3-12-8-12_S",   "permeable": True},
     {"idx": 7, "short": "Brain1",  "name": "Brain_6-4-4-13",      "permeable": True},
     {"idx": 8, "short": "DOPC2",   "name": "DOPC_6-5-8-12",       "permeable": True},
+    {"idx": 9, "short": "CsA_v2", "name": "Cyclosporin A (rerun)", "permeable": True},
 ]
 
 

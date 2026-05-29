@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=dopc_6mer_crest
-#SBATCH --output=results/slurm_logs/dopc_6mer_crest_%j.out
-#SBATCH --error=results/slurm_logs/dopc_6mer_crest_%j.err
+#SBATCH --job-name=crest
+#SBATCH --output=results/slurm_logs/%x_%j.out
+#SBATCH --error=results/slurm_logs/%x_%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=32G

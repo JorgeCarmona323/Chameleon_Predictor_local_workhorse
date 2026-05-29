@@ -46,21 +46,25 @@ PARTITION   = "all"               # SLURM partition (run `sinfo` to list availab
 CONDA_ENV   = "chameleon"         # conda environment with crest + xtb + rdkit
 CONDA_SH    = "~/miniconda3/etc/profile.d/conda.sh"
 CPUS        = 20                  # CPUs per compound job (= --threads passed to CREST)
-MEM         = "16G"               # RAM per job
+MEM         = "32G"               # RAM per job
 TIME        = None                # Wall-time limit per compound — None = no limit (cluster default)
 
 # Paths — relative to repo root on the cluster
-SCRIPT_PATH = "scripts/tier2_crest.py"
+SCRIPT_PATH = "scripts/crest_v3.2.py"
 OUTDIR      = "results"
 LOGS_BASE   = "results/slurm_logs"
 
-# ── Compound metadata (mirrors REFERENCE_COMPOUNDS in tier2_crest.py) ─────────
+# ── Compound metadata (mirrors REFERENCE_COMPOUNDS in crest_v3.2.py) ──────────
 COMPOUNDS = [
-    {"idx": 0, "short": "HexPep",  "name": "Hexapeptide",    "permeable": False},
-    {"idx": 1, "short": "CsA",     "name": "Cyclosporin A",  "permeable": True},
-    {"idx": 2, "short": "PSLYF",   "name": "c*[PSLYF]",     "permeable": False},
-    {"idx": 3, "short": "DP955",   "name": "DP-955",         "permeable": True},
-    {"idx": 4, "short": "DP944",   "name": "DP-944",         "permeable": False},
+    {"idx": 0, "short": "HexPep",  "name": "Hexapeptide",         "permeable": False},
+    {"idx": 1, "short": "CsA",     "name": "Cyclosporin A",       "permeable": True},
+    {"idx": 2, "short": "CsO",     "name": "Cyclosporin O",       "permeable": True},
+    {"idx": 3, "short": "PSLYF",   "name": "c*[PSLYF]",          "permeable": False},
+    {"idx": 4, "short": "WhC3",    "name": "White_compd3",        "permeable": True},
+    {"idx": 5, "short": "DOPC_R",  "name": "DOPC_3-12-8-12_R",   "permeable": True},
+    {"idx": 6, "short": "DOPC_S",  "name": "DOPC_3-12-8-12_S",   "permeable": True},
+    {"idx": 7, "short": "Brain1",  "name": "Brain_6-4-4-13",      "permeable": True},
+    {"idx": 8, "short": "DOPC2",   "name": "DOPC_6-5-8-12",       "permeable": True},
 ]
 
 
@@ -265,8 +269,7 @@ def main() -> None:
     if not args.dry_run:
         print(f"\nMonitor with:  squeue -u $USER")
         print(f"Check logs in: {logs_dir}/")
-        print(f"\nAfter all 5 complete, pull results and run locally:")
-        print(f"  python {SCRIPT_PATH} --merge --outdir {OUTDIR}")
+        print(f"\nAfter jobs complete, scp results back to local and analyse.")
 
 
 if __name__ == "__main__":

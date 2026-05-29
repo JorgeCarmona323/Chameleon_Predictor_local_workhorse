@@ -310,7 +310,9 @@ def _xtb_opt_worker(args):
         xtb_out.write_text(proc.stdout or "")
         xtb_err.write_text(proc.stderr or "")
 
-    if proc.returncode != 0:
+        if proc.returncode != 0:
+            return None
+    except Exception:
         return None
 
     opt_xyz = conf_dir / "xtbopt.xyz"
@@ -959,8 +961,10 @@ def process_compound(cpd: dict, work_base: Path,
             failed_solvents.append(label)
             continue
 
-        if max_confs is not None:
-            conformers = conformers[:max_confs]
+        max_post = max_confs if max_confs is not None else 50
+        if len(conformers) > max_post:
+            _log(f"  Capping ensemble: {len(conformers)} → {max_post} lowest-energy conformers")
+        conformers = conformers[:max_post]
         n_confs = len(conformers)
 
         psa_vals, hb_vals, energies = [], [], []

@@ -398,6 +398,8 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
         "--chrg",  str(charge),
         "--alpb",  solvent,
         "--keepdir",
+        "--noreftopo",
+        "-notopo",
     ]
 
     _log(f"    CREST: {' '.join(cmd)}")

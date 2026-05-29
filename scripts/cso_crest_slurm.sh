@@ -14,7 +14,7 @@ cd "$REPO_DIR"
 mkdir -p logs results
 
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate chameleon
+conda activate chameleon_crest212
 
 echo "===== CsO CREST run — $(date) ====="
 echo "Python: $(which python)"

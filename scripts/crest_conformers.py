@@ -28,11 +28,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import numpy as np
 import pandas as pd
 
-import importlib as _il
-_desc = _il.import_module("3dphys_descriptors_v2")
-boltzmann_weights = _desc.boltzmann_weights
-compute_psa_xyz   = _desc.compute_psa_xyz
-count_hbonds_xyz  = _desc.count_hbonds_xyz
+from phys_descriptors_v2 import boltzmann_weights, compute_psa_xyz, count_hbonds_xyz
 
 warnings.filterwarnings("ignore")
 
@@ -657,10 +653,11 @@ def process_compound(cpd: dict, work_base: Path,
             failed_solvents.append(label)
             continue
 
-        max_post = max_confs if max_confs is not None else 50
-        if len(conformers) > max_post:
-            _log(f"  Capping ensemble: {len(conformers)} → {max_post} lowest-energy conformers")
-        conformers = conformers[:max_post]
+        if solvent == SOLVENT_MEM:
+            max_post = max_confs if max_confs is not None else 50
+            if len(conformers) > max_post:
+                _log(f"  Capping ensemble: {len(conformers)} → {max_post} lowest-energy conformers")
+            conformers = conformers[:max_post]
         n_confs = len(conformers)
 
         psa_vals, hb_vals, energies = [], [], []

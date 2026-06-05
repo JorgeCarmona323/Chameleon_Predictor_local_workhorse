@@ -65,9 +65,64 @@ Cyclosporin A — the canonical chameleonic molecule — is 11 residues, MW 1,20
 
 ---
 
+---
+
+## Refinement (2026-06-05): Partition-Based Two-Regime Model
+
+The original "threshold at 9 residues" framing assumes a sharp cutoff. A more realistic and testable version **partitions the dataset by residue count (6, 7, 8, 9, 10, 11, 12-mer)** and asks, per partition, *which descriptor family predicts permeability*. This lets the data reveal *where* and *how gradually* the mechanism transitions, rather than assuming a hard line at 9.
+
+### The two-regime claim
+
+Permeability operates via (at least) two size-dependent mechanisms:
+
+- **Chameleonic regime (larger peptides):** solvent-driven switching between an open aqueous conformer and a collapsed membrane conformer. Governed by **ΔPSA, ΔΔG, cis-amide switching**. CsA (11-mer) is the archetype — experimental A1 (open, PSA 137) ↔ C1 (closed, PSA 96).
+- **Pre-organized regime (smaller peptides):** permeability via *pre-organized* intramolecular H-bonding and intrinsic lipophilicity, **without** solvent-driven switching. Governed by **IMHB stability, exposed-HBD count, lipophilicity**.
+
+### Prediction across partitions
+
+For each residue-count bin, fit permeability against both descriptor families and record which dominates:
+
+| Partition | Expected dominant signal |
+|---|---|
+| 6, 7, 8-mer | pre-organized: IMHB, lipophilicity, exposed HBD (chameleonic descriptors ~flat) |
+| 9, 10-mer | **transition zone** — chameleonic descriptors begin to gain weight |
+| 11, 12-mer | chameleonic: ΔPSA, ΔΔG, cis-switch dominate |
+
+The **transition partition** (where chameleonic descriptors start carrying predictive weight) is the empirical "threshold" — likely a gradient, not a step.
+
+### Mechanistic evidence from reference compounds (existence proof, not statistics)
+
+- **CsA (11-mer):** experimental structures show the chameleonic two-state switch (A1 open ↔ C1 closed). *Note: our CREST V1 failed to reproduce this — see reliability caveats below.*
+- **DOPC R/S, Brain1, DOPC2 (6-mers, permeable hits):** **anti-chameleonic** — ΔPSA *negative* (more polar surface in membrane than water); they do NOT switch, yet permeate. The R/S difference was in **intramolecular H-bonding and conformational pre-organization**, not ΔPSA. Direct support for a distinct small-peptide mechanism.
+  → See `docs/experiments/2026-06-05_dopc_rs_3d_vs_2d_descriptors.md`
+
+### Division of labor
+
+- **Reference compounds (CREST):** validate the mechanism, justify the descriptor set, anchor partitions where available. *Cannot* establish the threshold statistically (too few; sampling/solvent caveats).
+- **Full CycPeptMPDB (`feature_matrix.csv`, 1,566–7,000 compounds):** where the partition analysis and predictive claim are tested. Reference compounds currently anchor only the 6-mer and 11-mer bins; 7/8/9/10/12-mer partitions are populated by the database.
+
+### Implementation note
+
+The model carries **both** descriptor families for every compound and either (a) includes a residue-count × descriptor interaction term, or (b) is fit per-partition. A single chameleonic descriptor will fail on small peptides; a single lipophilicity descriptor will fail on large ones.
+
+---
+
+## Reliability of Current Evidence (2026-06-05)
+
+| Evidence | Reliability | Why |
+|---|---|---|
+| CsA experimental A1/C1 (PSA, cis, Rg) | **High** | Crystallography (X-ray/neutron, CCDC) |
+| CsA CREST V1 ensemble | **Low** | Missed cis MeVal11–MeBmt1 (no `-notopo`), over-collapsed (ALPB implicit), single-start. Wrong ensemble; superseded by CsA_v2. |
+| Exp-vs-CREST V1 comparison (as a diagnostic) | **High** | Correctly identified the V1 failures |
+| DOPC R/S relative comparison | **Moderate** | Correct pipeline (`-notopo`, CREST 2.12); R-vs-S differences from uncapped water ensembles. But single-start, implicit solvent, no experimental validation. |
+| DOPC R/S absolute ΔPSA | **Low** | mem capped at 50, over-collapse, sub-threshold 6-mer; use relative/normalized only |
+
+---
+
 ## References
 
 - Yu et al. (2026). *bioRxiv*. DOI: 10.64898/2026.01.06.697862
 - Witek et al. (2016). *J. Chem. Theory Comput.* — CsA conformational ensemble in polar/apolar solvents
+- Limbach et al. (2025). *J. Med. Chem.* — biased equilibrium / Goldilocks barriers
 - Bockus et al. (2015). *J. Med. Chem.* — decoding chameleonic properties of macrocycles
 - Rezai et al. (2006). *J. Am. Chem. Soc.* — conformational flexibility and passive permeability

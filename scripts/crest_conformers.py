@@ -269,6 +269,12 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
 
     elapsed = time.time() - t0
     ensemble = work_dir.resolve() / "crest_conformers.xyz"
+    if ensemble.exists() and ensemble.stat().st_size > 0:
+        if proc.returncode != 0:
+            _log(f"    CREST: exit={proc.returncode} but ensemble found — treating as success")
+        else:
+            _log(f"    CREST: finished in {elapsed/3600:.2f}h — ensemble found")
+        return ensemble
     if proc.returncode != 0:
         _log(f"    CREST: FAILED after {elapsed:.0f}s (exit={proc.returncode})")
         try:
@@ -276,11 +282,8 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
             print("\n".join(f"      ERR: {l}" for l in tail), flush=True)
         except Exception:
             pass
-        return None
-    if ensemble.exists() and ensemble.stat().st_size > 0:
-        _log(f"    CREST: finished in {elapsed/3600:.2f}h — ensemble found")
-        return ensemble
-    _log(f"    CREST: finished with exit=0 but no ensemble after {elapsed:.0f}s")
+    else:
+        _log(f"    CREST: finished with exit=0 but no ensemble after {elapsed:.0f}s")
     return None
 
 

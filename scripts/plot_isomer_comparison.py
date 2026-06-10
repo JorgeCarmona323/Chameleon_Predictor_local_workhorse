@@ -79,17 +79,14 @@ for col in ["TPSA_2d", "MolLogP_Crippen", "MolWt", "NumHDonors", "NumHAcceptors"
             "FractionCSP3", "MolMR_Crippen", "LabuteASA"]:
     two_d[col] = reldiff(d2.loc[iso[0], col], d2.loc[iso[1], col])
 
-# 3D ensemble descriptors (Boltzmann means)
-def bw(case, idx):
-    arr = data[case][idx]; w = data[case][2]
-    return float(np.dot(w, arr))
-three_d = {
-    "water_bw_HB":     reldiff(bw("R_water", 0), bw("S_water", 0)),
-    "mem_bw_HB":       reldiff(bw("R_mem", 0),   bw("S_mem", 0)),
-    "water_bw_PSA":    reldiff(bw("R_water", 1), bw("S_water", 1)),
-    "mem_bw_PSA":      reldiff(bw("R_mem", 1),   bw("S_mem", 1)),
-    "water_p_dominant": reldiff(data["R_water"][2].max(), data["S_water"][2].max()),
-}
+# 3D ensemble descriptors -- read from the robust ensemble_descriptors.py output
+ed = pd.read_csv("results/ensemble_descriptors_dopc_rs.csv").set_index("compound")
+r3d, s3d = ed.loc["DOPC_R"], ed.loc["DOPC_S"]
+three_d_cols = [
+    "water_bw_psa", "water_bw_hb", "water_bw_rg", "water_bw_spherocity",
+    "water_bw_asphericity", "water_p_dominant", "mem_bw_psa", "mem_bw_hb",
+]
+three_d = {c: reldiff(float(r3d[c]), float(s3d[c])) for c in three_d_cols}
 
 fig, ax = plt.subplots(figsize=(8, 6))
 names = list(two_d) + list(three_d)

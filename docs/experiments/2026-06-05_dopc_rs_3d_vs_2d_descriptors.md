@@ -34,13 +34,22 @@ Computed per solvent, Boltzmann-weighted over the CREST ensembles:
 
 | Descriptor | DOPC_R | DOPC_S | Interpretation |
 |---|---|---|---|
-| `water_bw_psa` | 183.5 | 183.5 | **identical** — polarity does not distinguish them |
+| `water_bw_psa` | 183.5 | 183.5 | **identical in water** — polarity does not distinguish them here |
+| `mem_bw_psa` | 208.6 | 199.6 | differ by ~9 Å² in membrane (but capped ensemble — see limitations) |
 | `water_bw_hb` | **4.34** | **6.75** | S forms ~2.4 more intramolecular H-bonds in water |
 | `mem_bw_hb` | 6.86 | 6.89 | identical in membrane |
 | `delta_hb` (water−mem) | **−2.52** | **−0.14** | R *opens up* in water (sheds H-bonds); S stays H-bonded in both |
 | `water_p_dominant` | **0.079** | **0.231** | R ensemble is diffuse (no dominant conformer, 479 confs); S has a clear dominant basin |
 | `water_bw_spherocity` | 0.60 | 0.52 | R rounder; S more anisotropic |
 | `cis_prob` (all bonds) | identical | identical | both have one constitutively-cis amide (bond 3); no difference |
+
+### Why identical water PSA despite different H-bonding? (IMHB and PSA decouple)
+
+S makes ~2.4 more intramolecular H-bonds in water than R, yet their water PSA is identical (183.5). These are **not** redundant descriptors:
+- **PSA** = solvent-accessible surface of the polar **heavy atoms** (N, O, S); it does not count hydrogens.
+- **IMHB** = a discrete geometric event (donor-H within 2.5 Å of acceptor, >120°).
+
+Forming an intramolecular H-bond sequesters the **H** (never counted in PSA) and only partially shields one acceptor — a "surface" H-bond can add +1 IMHB while the polar heavy atoms stay solvent-exposed. In water, polar groups are thermodynamically driven to expose regardless of transient internal H-bonds, so the time-averaged polar-heavy-atom exposure converges for both isomers. **Result: same PSA, different H-bond network** — direct evidence the two descriptors carry orthogonal information, and a reason to keep both in the feature set.
 
 ---
 
@@ -60,9 +69,21 @@ It demonstrates the value of the `DynamicEnsembleEncoder` modality: stereochemis
 
 ---
 
-## Connection to the model
+## Connection to the model and hypothesis
 
 These descriptors feed the `DynamicEnsembleEncoder` (see `chameleon_model_architecture.md`); the R/S pair is a clean demonstration that the dynamic modality carries signal orthogonal to the `StaticDescriptorEncoder` (2D). For an ablation, R/S isomer pairs are an ideal test: any model relying only on static/2D features will predict identical permeability for both, whereas the experimental permeabilities differ.
+
+It also fits the **partition-based two-regime hypothesis** (`hypothesis.md`): these are 6-mers, *below* the ~9-residue chameleonicity threshold. As predicted for the small/pre-organized regime, the discriminating signal is **intramolecular H-bonding and conformational pre-organization**, not chameleonic ΔPSA switching (which is in fact anti-chameleonic here — ΔPSA negative). The R/S pair is a concrete instance of the small-peptide mechanism the hypothesis attributes to sub-threshold peptides.
+
+## Reliability
+
+| Aspect | Reliability | Why |
+|---|---|---|
+| R-vs-S *relative* difference | **Moderate** | Both isomers ran the identical pipeline (`-notopo`, CREST 2.12); headline signals (water H-bonds, dominant population, shape) come from the **uncapped** water ensembles. Systematic biases cancel in the R−S comparison. |
+| Absolute values (esp. ΔPSA) | **Low** | mem capped at 50, single-start CREST, implicit solvent, sub-threshold 6-mer. Use relative/normalized only. |
+| Experimental validation | **None** | No crystal/NMR structures for these isomers (unlike CsA). The difference is *suggestive, not proven* — hypothesis-generating. |
+
+**Bottom line:** there is a real, reproducible *relative* difference between the isomers in conformational behavior — but it is unvalidated and should be framed as signal worth investigating, not an established result.
 
 ---
 

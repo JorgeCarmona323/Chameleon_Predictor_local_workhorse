@@ -15,16 +15,25 @@ DOPC 3-12-8-12 R and S are **stereoisomers** — identical 2D structure, differi
 
 ## Why 2D descriptors are blind here
 
-R and S have the **same molecular graph**: same formula, same bonds, same atom types. Every topological/2D descriptor is therefore **identical** between them:
+R and S have the **same molecular graph**: same formula, same bonds, same atom types. Computed explicitly (`scripts/compute_2d_descriptors.py`), **all 13 canonical 2D / lipophilicity descriptors are byte-for-byte identical**:
 
 | 2D descriptor | DOPC_R | DOPC_S |
 |---|---|---|
-| MolWt | identical | identical |
-| TPSA (2D) | identical | identical |
-| H-bond donors / acceptors | identical | identical |
-| Rotatable bonds, ring count, FractionCSP3 | identical | identical |
+| MolWt | 801.97 | 801.97 |
+| TPSA (2D) | 249.36 | 249.36 |
+| MolLogP (Crippen) | −1.491 | −1.491 |
+| MolMR (molar refractivity) | 203.24 | 203.24 |
+| NumHDonors / NumHAcceptors | 8 / 12 | 8 / 12 |
+| FractionCSP3 | 0.457 | 0.457 |
+| LabuteASA | 324.05 | 324.05 |
+| QED | 0.150 | 0.150 |
+| *(13/13 total)* | **identical** | **identical** |
 
-A 2D-descriptor model (or any fingerprint that ignores stereochemistry) **cannot tell these two apart.** Stereochemistry only manifests in 3D geometry.
+A 2D-descriptor or lipophilicity-based model **cannot tell these two apart** — including the two metrics permeability models lean on most (TPSA and LogP). Stereochemistry only manifests in 3D geometry.
+
+**Figures** (`results/figures/isomers/`, from `scripts/plot_isomer_comparison.py`):
+- `box_hbonds` — per-conformer H-bond distribution; R-water is the lone low/spread group, S-water + both membrane forms cluster closed.
+- `rel_diff_2d_vs_3d` — relative %|R−S| per descriptor; 2D/lipophilicity all at 0%, 3D ensemble up to 98% (`water_p_dominant`), 44% (`water_bw_HB`). The signal lives in water (`mem_bw_HB` only 1%).
 
 ---
 

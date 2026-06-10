@@ -112,6 +112,34 @@ fig.tight_layout()
 fig.savefig(OUT / "rel_diff_2d_vs_3d.svg"); fig.savefig(OUT / "rel_diff_2d_vs_3d.png", dpi=160)
 plt.close(fig)
 
-print("Saved box_hbonds.{svg,png} and rel_diff_2d_vs_3d.{svg,png} ->", OUT)
+# ---------- Figure 3: 2D descriptor overlap (R and S coincide exactly) ----------
+# canonical druglike / lipophilicity set; LogP is RDKit Crippen (WLOGP) -- the
+# only logP RDKit ships. Any 2D logP (Crippen/aLogP/cLogP) is stereo-blind and
+# would be identical for R/S, so the method choice does not affect the conclusion.
+cols = ["MolWt", "TPSA_2d", "MolLogP_Crippen", "MolMR_Crippen",
+        "NumHDonors", "NumHAcceptors", "NumRotatableBonds"]
+labels2d = ["MolWt", "TPSA", "LogP\n(Crippen)", "MolMR",
+            "HBD", "HBA", "RotBonds"]
+rvals = [d2.loc[iso[0], c] for c in cols]
+svals = [d2.loc[iso[1], c] for c in cols]
+x = np.arange(len(cols))
+fig, ax = plt.subplots(figsize=(9, 5))
+ax.bar(x, rvals, width=0.6, color=C_R, alpha=0.6, label="DOPC_R", edgecolor="none")
+ax.bar(x, svals, width=0.6, color=C_S, alpha=0.6, label="DOPC_S", edgecolor="none")
+ax.set_yscale("symlog")          # handles the negative LogP and the large MolWt range
+ax.axhline(0, color="black", lw=0.6)
+ax.set_xticks(x); ax.set_xticklabels(labels2d)
+ax.set_ylabel("descriptor value (symlog scale)")
+ax.set_title("2D / lipophilicity descriptors: R and S overlap exactly\n"
+             "(bars perfectly coincide -> identical for every descriptor)", fontweight="bold")
+ax.legend(loc="upper right")
+for xi, v in zip(x, rvals):
+    ax.text(xi, v + (0.15 if v >= 0 else -0.35), f"{v:g}", ha="center",
+            va="bottom" if v >= 0 else "top", fontsize=8, color="grey")
+fig.tight_layout()
+fig.savefig(OUT / "overlap_2d.svg"); fig.savefig(OUT / "overlap_2d.png", dpi=160)
+plt.close(fig)
+
+print("Saved box_hbonds, rel_diff_2d_vs_3d, overlap_2d ->", OUT)
 print("\n2D relative diffs:", {k: round(v,1) for k,v in two_d.items()})
 print("3D relative diffs:", {k: round(v,1) for k,v in three_d.items()})

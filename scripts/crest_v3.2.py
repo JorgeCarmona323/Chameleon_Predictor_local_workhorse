@@ -19,6 +19,12 @@ Compound index:
   7 = Brain1   (permeable,    6-mer, Brain 6-4-4-13, naphthalene)
   8 = DOPC2    (permeable,    6-mer, DOPC 6-5-8-12, naphthalene)
   9 = CsA_v2  (permeable,   11-mer, CsA rerun with --noreftopo -notopo)
+ 10 = DOPCsar_R   (DOPC 3-12-10-12 R, sarcosine for azetidine)
+ 11 = DOPCsar_S   (DOPC 3-12-10-12 S, sarcosine for azetidine)
+ 12 = DOPCdz_R    (DOPC 3-12-8-12 R + CF3-diazirine)
+ 13 = DOPCdz_S    (DOPC 3-12-8-12 S + CF3-diazirine)
+ 14 = DOPCsardz_R (DOPC 3-12-10-12 R sarcosine + CF3-diazirine)
+ 15 = DOPCsardz_S (DOPC 3-12-10-12 S sarcosine + CF3-diazirine)
 """
 
 from __future__ import annotations
@@ -174,6 +180,54 @@ REFERENCE_COMPOUNDS = [
         "pampa": -5.90,
         "permeable": True,
         "hbd": 5,
+    },
+    {
+        "name": "DOPC_3-12-10-12_R",
+        "short": "DOPCsar_R",
+        "cycpeptmpdb_id": None,
+        "smiles": "CN(CC(N[C@@H](CO)C(N[C@@H](c1ccc[s]1)C(N[C@@H](CSCc1c(CSC[C@@H](C(N[C@@H]2CO)=O)NC(CCC#C)=O)cccc1)C(N)=O)=O)=O)=O)C2=O",
+        "source": "Hu lab — DOPC 3-12-10-12 R (sarcosine for azetidine)",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_3-12-10-12_S",
+        "short": "DOPCsar_S",
+        "cycpeptmpdb_id": None,
+        "smiles": "CN(CC(N[C@@H](CO)C(N[C@H](c1ccc[s]1)C(N[C@@H](CSCc1c(CSC[C@@H](C(N[C@@H]2CO)=O)NC(CCC#C)=O)cccc1)C(N)=O)=O)=O)=O)C2=O",
+        "source": "Hu lab — DOPC 3-12-10-12 S (sarcosine for azetidine)",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_3-12-8-12_R_diazirine",
+        "short": "DOPCdz_R",
+        "cycpeptmpdb_id": None,
+        "smiles": "C#CCCC(N[C@@H](CSCc1cc(C2(C(F)(F)F)N=N2)cc(CSC[C@@H](C(N)=O)NC([C@H](c2ccc[s]2)NC([C@H](CO)NC([C@H](CC2)N2C([C@H](CO)N2)=O)=O)=O)=O)c1)C2=O)=O",
+        "source": "Hu lab — DOPC 3-12-8-12 R + CF3-diazirine photocrosslinker",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_3-12-8-12_S_diazirine",
+        "short": "DOPCdz_S",
+        "cycpeptmpdb_id": None,
+        "smiles": "C#CCCC(N[C@@H](CSCc1cc(C2(C(F)(F)F)N=N2)cc(CSC[C@@H](C(N)=O)NC([C@@H](c2ccc[s]2)NC([C@H](CO)NC([C@H](CC2)N2C([C@H](CO)N2)=O)=O)=O)=O)c1)C2=O)=O",
+        "source": "Hu lab — DOPC 3-12-8-12 S + CF3-diazirine photocrosslinker",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_3-12-10-12_R_diazirine",
+        "short": "DOPCsardz_R",
+        "cycpeptmpdb_id": None,
+        "smiles": "CN(CC(N[C@@H](CO)C(N[C@@H](c1ccc[s]1)C(N[C@@H](CSCc1cc(CSC[C@@H](C(N[C@@H]2CO)=O)NC(CCC#C)=O)cc(C3(C(F)(F)F)N=N3)c1)C(N)=O)=O)=O)=O)C2=O",
+        "source": "Hu lab — DOPC 3-12-10-12 R (sarcosine) + CF3-diazirine",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_3-12-10-12_S_diazirine",
+        "short": "DOPCsardz_S",
+        "cycpeptmpdb_id": None,
+        "smiles": "CN(CC(N[C@@H](CO)C(N[C@H](c1ccc[s]1)C(N[C@@H](CSCc1cc(CSC[C@@H](C(N[C@@H]2CO)=O)NC(CCC#C)=O)cc(C3(C(F)(F)F)N=N3)c1)C(N)=O)=O)=O)=O)C2=O",
+        "source": "Hu lab — DOPC 3-12-10-12 S (sarcosine) + CF3-diazirine",
+        "pampa": None, "permeable": True, "hbd": None,
     },
 ]
 

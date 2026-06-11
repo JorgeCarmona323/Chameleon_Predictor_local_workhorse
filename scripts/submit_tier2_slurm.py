@@ -66,6 +66,12 @@ COMPOUNDS = [
     {"idx": 7, "short": "Brain1",  "name": "Brain_6-4-4-13",      "permeable": True},
     {"idx": 8, "short": "DOPC2",   "name": "DOPC_6-5-8-12",       "permeable": True},
     {"idx": 9, "short": "CsA_v2", "name": "Cyclosporin A (rerun)", "permeable": True},
+    {"idx": 10, "short": "DOPCsar_R",   "name": "DOPC_3-12-10-12_R",          "permeable": True},
+    {"idx": 11, "short": "DOPCsar_S",   "name": "DOPC_3-12-10-12_S",          "permeable": True},
+    {"idx": 12, "short": "DOPCdz_R",    "name": "DOPC_3-12-8-12_R_diazirine", "permeable": True},
+    {"idx": 13, "short": "DOPCdz_S",    "name": "DOPC_3-12-8-12_S_diazirine", "permeable": True},
+    {"idx": 14, "short": "DOPCsardz_R", "name": "DOPC_3-12-10-12_R_diazirine", "permeable": True},
+    {"idx": 15, "short": "DOPCsardz_S", "name": "DOPC_3-12-10-12_S_diazirine", "permeable": True},
 ]
 
 
@@ -79,6 +85,7 @@ def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
     """
     idx   = cpd["idx"]
     short = cpd["short"]
+    resume_suffix = " \\\n            --resume" if resume else ""
     name  = cpd["name"]
     time_line = f"#SBATCH --time={time_limit}\n        " if time_limit else ""
 
@@ -110,7 +117,7 @@ def build_crest_script(cpd: dict, cpus: int, mem: str, time_limit: str | None,
         python {SCRIPT_PATH} \\
             --compound {idx} \\
             --threads  {cpus} \\
-            --outdir   {OUTDIR}{" \\\n            --resume" if resume else ""}
+            --outdir   {OUTDIR}{resume_suffix}
 
         EXIT_CODE=$?
         echo "Finished: $(date)  |  exit=$EXIT_CODE"

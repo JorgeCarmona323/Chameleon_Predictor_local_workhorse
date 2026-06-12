@@ -2,6 +2,8 @@
 
 **For PI review · 2026-06-10 · keep updated**
 
+> **Bottom line:** Two stereoisomers that are *provably identical* on every 2D and lipophilicity descriptor differ by up to **98%** in their 3D conformational ensembles — concentrated entirely in the aqueous environment. The stereocenter makes **R solvent-responsive** (opens in water) and **S pre-organized** (closed in both water and membrane). Only solvent-resolved 3D ensemble descriptors capture this; no 2D or PSA-based model can. This is hypothesis-generating evidence; the experimental R-vs-S permeability is the decisive next data point.
+
 ---
 
 ## Methods
@@ -10,9 +12,24 @@
 
 > **[FIGURE 1 — molecule structures]** *Place the R/S 2D structure panel here (thiophene stereocenter highlighted). Shows the single point of difference between the isomers.*
 
-**Conformer generation.** For each isomer, conformational ensembles were generated in two solvents — water and chloroform (CHCl₃, a low-dielectric membrane mimic) — using CREST 2.12 (iMTD-GC metadynamics) with GFN2-xTB and the ALPB implicit solvent model. Pipeline per molecule: RDKit ETKDGv3 embedding (5,000 → 50 conformers, MMFF94, 0.5 Å RMSD pruning) → GFN2-xTB pre-optimization → CREST iMTD-GC (`--noreftopo -notopo` for the macrocycle) → Boltzmann-weighted ensemble at 298 K. This mirrors the published CREMP protocol.
+**Conformer generation (CREST conditions).** For each isomer, conformational ensembles were generated independently in two solvents — **water** (high dielectric, aqueous phase) and **chloroform / CHCl₃** (low dielectric, ε ≈ 4.8, membrane-interior mimic). The per-molecule pipeline:
 
-**Descriptors.** From each Boltzmann-weighted ensemble we computed whole-molecule 3D descriptors (`ensemble_descriptors.py`): 3D polar surface area (rdFreeSASA), intramolecular H-bond count, radius of gyration, shape anisotropy (NPR1/2, asphericity, spherocity), and the population of the dominant conformer. For reference, all standard 2D and lipophilicity descriptors (MolWt, TPSA, Crippen LogP, MolMR, HBD/HBA, etc.) were computed from the 2D graph (`compute_2d_descriptors.py`).
+1. **Initial geometries — RDKit ETKDGv3:** embed up to 5,000 conformers (`numConfs=5000`, `useRandomCoords=True`, macrocycle torsion preferences), MMFF94 minimize, sort by energy, prune by heavy-atom RMSD (0.5 Å) to ≤ 50 representatives.
+2. **xTB pre-optimization:** each retained conformer optimized with **GFN2-xTB** + **ALPB** implicit solvent (the run's solvent); the lowest-energy optimized structure seeds CREST.
+3. **CREST conformer search — version 2.12:** iterative metadynamics + genetic structure crossing (**iMTD-GC**), **GFN2-xTB**, **ALPB** solvent, flags **`--noreftopo --notopo`** (required so the macrocycle can flip/sample cis-trans amide states without false "broken-ring" termination). CREST defaults retained: energy window **6.0 kcal/mol**, cregen RMSD threshold **0.125 Å**, inter-conformer energy threshold **0.05 kcal/mol**. Metadynamics/MD runs at elevated temperatures (**400–500 K**) for enhanced barrier crossing; final conformer energies are GFN2-xTB values.
+4. **Ensembles:** Boltzmann-weighted at **298 K** (RT = 0.592 kcal/mol) from the GFN2-xTB energies. The CHCl₃ ensemble post-processing was capped at the 50 lowest-energy conformers (negligible effect on Boltzmann-weighted means). Output per solvent: `ensemble.sdf` (3D coordinates) + `ensemble.json` (energies, weights, per-conformer PSA/HB).
+
+CREST 2.12 was used deliberately — CREST 3.x produced reproducible `crest_xtbsp` crashes on these macrocycles. The overall protocol mirrors the published CREMP dataset workflow.
+
+**3D descriptor generation (`ensemble_descriptors.py`).** Computed per solvent, **Boltzmann-weighted over the full ensemble**, on the **whole molecule** (backbone + all side chains):
+- **3D polar surface area (PSA):** solvent-accessible surface of polar heavy atoms (N, O, S, P) via RDKit `rdFreeSASA` with Bondi radii.
+- **Intramolecular H-bonds:** geometric count (donor H···acceptor < 2.5 Å, D–H···A angle > 120°) over all N/O donors and acceptors.
+- **Shape:** radius of gyration, NPR1/NPR2, asphericity, spherocity (RDKit `Descriptors3D`).
+- **Conformational concentration:** Boltzmann population of the dominant (highest-weight) conformer.
+- **cis-amide propensity:** ω dihedral per backbone ring amide bond (cis if |ω| < 30°).
+- **Cross-solvent:** Δ(water − CHCl₃) for each, plus `norm_delta_psa` (ΔPSA / total SASA).
+
+**2D / lipophilicity descriptors (`compute_2d_descriptors.py`).** Computed from the 2D graph only (conformer-independent): MolWt, TPSA, Crippen LogP, Crippen MolMR, HBD, HBA, rotatable bonds, FractionCSP3, LabuteASA, QED.
 
 ---
 

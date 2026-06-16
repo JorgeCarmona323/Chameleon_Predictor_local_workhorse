@@ -26,6 +26,10 @@ Compound index:
  13 = DOPCdz_S    (DOPC 3-12-8-12 S + CF3-diazirine)
  14 = DOPCsardz_R (DOPC 3-12-10-12 R sarcosine + CF3-diazirine)
  15 = DOPCsardz_S (DOPC 3-12-10-12 S sarcosine + CF3-diazirine)
+ 16 = DOPCdz_R_v2    (N=N-constrained rerun of 12)
+ 17 = DOPCdz_S_v2    (N=N-constrained rerun of 13)
+ 18 = DOPCsardz_R_v2 (N=N-constrained rerun of 14)
+ 19 = DOPCsardz_S_v2 (N=N-constrained rerun of 15)
 """
 
 from __future__ import annotations
@@ -228,6 +232,42 @@ REFERENCE_COMPOUNDS = [
         "cycpeptmpdb_id": None,
         "smiles": "CN(CC(N[C@@H](CO)C(N[C@H](c1ccc[s]1)C(N[C@@H](CSCc1cc(CSC[C@@H](C(N[C@@H]2CO)=O)NC(CCC#C)=O)cc(C3(C(F)(F)F)N=N3)c1)C(N)=O)=O)=O)=O)C2=O",
         "source": "Hu lab — DOPC 3-12-10-12 S (sarcosine) + CF3-diazirine",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    # ── N=N-constrained reruns (v2) of the diazirine compounds 12-15 ──────────────
+    # GFN2/CREST stretched the diazirine N=N to ~1.43 A in the originals; these reruns
+    # apply the auto N=N distance constraint (crest_conformers.py). Same SMILES, new index,
+    # fresh run dir — no need to touch the original 12-15 runs. (Mirrors the CsA_v2 pattern.)
+    {
+        "name": "DOPC_3-12-8-12_R_diazirine_v2",
+        "short": "DOPCdz_R_v2",
+        "cycpeptmpdb_id": None,
+        "smiles": "C#CCCC(N[C@@H](CSCc1cc(C2(C(F)(F)F)N=N2)cc(CSC[C@@H](C(N)=O)NC([C@H](c2ccc[s]2)NC([C@H](CO)NC([C@H](CC2)N2C([C@H](CO)N2)=O)=O)=O)=O)c1)C2=O)=O",
+        "source": "Hu lab — DOPC 3-12-8-12 R + CF3-diazirine; N=N-constrained rerun of idx 12",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_3-12-8-12_S_diazirine_v2",
+        "short": "DOPCdz_S_v2",
+        "cycpeptmpdb_id": None,
+        "smiles": "C#CCCC(N[C@@H](CSCc1cc(C2(C(F)(F)F)N=N2)cc(CSC[C@@H](C(N)=O)NC([C@@H](c2ccc[s]2)NC([C@H](CO)NC([C@H](CC2)N2C([C@H](CO)N2)=O)=O)=O)=O)c1)C2=O)=O",
+        "source": "Hu lab — DOPC 3-12-8-12 S + CF3-diazirine; N=N-constrained rerun of idx 13",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_3-12-10-12_R_diazirine_v2",
+        "short": "DOPCsardz_R_v2",
+        "cycpeptmpdb_id": None,
+        "smiles": "CN(CC(N[C@@H](CO)C(N[C@@H](c1ccc[s]1)C(N[C@@H](CSCc1cc(CSC[C@@H](C(N[C@@H]2CO)=O)NC(CCC#C)=O)cc(C3(C(F)(F)F)N=N3)c1)C(N)=O)=O)=O)=O)C2=O",
+        "source": "Hu lab — DOPC 3-12-10-12 R (sarcosine) + CF3-diazirine; N=N-constrained rerun of idx 14",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_3-12-10-12_S_diazirine_v2",
+        "short": "DOPCsardz_S_v2",
+        "cycpeptmpdb_id": None,
+        "smiles": "CN(CC(N[C@@H](CO)C(N[C@H](c1ccc[s]1)C(N[C@@H](CSCc1cc(CSC[C@@H](C(N[C@@H]2CO)=O)NC(CCC#C)=O)cc(C3(C(F)(F)F)N=N3)c1)C(N)=O)=O)=O)=O)C2=O",
+        "source": "Hu lab — DOPC 3-12-10-12 S (sarcosine) + CF3-diazirine; N=N-constrained rerun of idx 15",
         "pampa": None, "permeable": True, "hbd": None,
     },
 ]

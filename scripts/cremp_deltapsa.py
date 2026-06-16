@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 cremp_deltapsa.py
 -----------------

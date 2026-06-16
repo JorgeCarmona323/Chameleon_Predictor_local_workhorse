@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 make_isomer_figures.py
 ----------------------

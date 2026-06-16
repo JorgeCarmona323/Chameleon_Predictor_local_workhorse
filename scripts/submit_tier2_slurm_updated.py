@@ -1,3 +1,4 @@
+# env: chameleon-sim
 """
 submit_tier2_slurm.py
 ---------------------

@@ -1,3 +1,4 @@
+# env: chameleon-sim
 """
 06b_tier2_crest.py
 ------------------

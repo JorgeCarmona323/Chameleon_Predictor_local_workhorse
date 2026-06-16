@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 00_curate_data.py
 -----------------

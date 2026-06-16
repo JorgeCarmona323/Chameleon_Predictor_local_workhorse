@@ -1,3 +1,4 @@
+# env: chameleon-ml
 """
 04_umap_visualization.py
 ------------------------

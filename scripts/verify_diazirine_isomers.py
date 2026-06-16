@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """Verify the 6 new compounds (3-12-10-12 sarcosine pair + 4 diazirine variants):
 validity, CIP at thiophene, stereocenter count, diazirine + CF3 presence, diastereomer pairing."""
 from rdkit import Chem, RDLogger

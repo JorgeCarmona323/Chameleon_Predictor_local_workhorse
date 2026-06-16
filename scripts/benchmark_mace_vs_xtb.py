@@ -1,3 +1,4 @@
+# env: MACE
 """
 benchmark_mace_vs_xtb.py
 ------------------------

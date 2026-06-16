@@ -1,3 +1,4 @@
+# env: MACE
 """
 mace_tip3p_feasibility.py
 --------------------------

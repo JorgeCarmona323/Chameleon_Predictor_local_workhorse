@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 01_conformer_engine.py
 ----------------------

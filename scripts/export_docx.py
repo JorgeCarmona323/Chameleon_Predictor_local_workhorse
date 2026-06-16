@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 Convert writeup_2026-03-18.md to a formatted Word document.
 Usage: python scripts/export_docx.py

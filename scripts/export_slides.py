@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 export_slides.py
 ----------------

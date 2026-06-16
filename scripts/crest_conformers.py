@@ -1,3 +1,4 @@
+# env: chameleon-sim
 """
 crest_conformers.py
 -------------------
@@ -138,10 +139,49 @@ def _write_conformer_xyz(mol, conf_id: int, xyz_path: Path,
     xyz_path.write_text("\n".join(lines) + "\n")
 
 
+# ── diazirine N=N constraint (GFN2 stretches it to a spurious ~1.43 Å; see ──────
+#    docs/experiments + memory diazirine-review-checklist). True N=N = 1.228 Å (exp,
+#    microwave) / 1.230 Å (CCSD(T)). Constrain it so the macrocycle samples freely
+#    while the rigid diazirine can't drift into GFN2's single-bond basin.
+DIAZIRINE_SMARTS = "[#6]1[#7]=[#7]1"
+DIAZIRINE_NN = 1.23   # Å; constrain target (literature 1.228–1.230)
+
+
+def diazirine_nn_atoms(mol):
+    """1-based (N1, N2) indices of the diazirine N=N for xtb/CREST, or None if absent."""
+    from rdkit import Chem
+    matches = mol.GetSubstructMatches(Chem.MolFromSmarts(DIAZIRINE_SMARTS))
+    if not matches:
+        return None
+    _c, n1, n2 = matches[0]      # SMARTS order: carbon, then the two nitrogens
+    return n1 + 1, n2 + 1        # xtb/CREST atom indices are 1-based
+
+
+def write_constraint_file(path: Path, nn_pair, value: float = DIAZIRINE_NN,
+                          fc: float = 0.25) -> Path:
+    """Write an xtb/CREST $constrain file pinning the diazirine N=N distance (Fix 1).
+    Used for both the xTB pre-opt (--input) and the CREST search (--cinp).
+
+    force constant = 0.25 Eh/Bohr^2 — the CREST-documented value for DISTANCE constraints
+    (https://crest-lab.github.io/crest-docs/page/examples/example_4.html#constrained-sampling;
+    the docs caution against high values). At r0=1.23 Å this is a ~20 kcal/mol barrier vs the
+    1.43 Å drift. Escalate to 0.5 → 1.0 only if the integrity check shows WATCH/FAIL drift.
+    No $metadyn block / reference file is needed for a distance constraint (those are only for
+    substructure fixing = Fix 2)."""
+    n1, n2 = nn_pair
+    path.write_text(
+        "$constrain\n"
+        f"  force constant={fc}\n"
+        f"  distance: {n1}, {n2}, {value}\n"
+        "$end\n"
+    )
+    return path
+
+
 def _xtb_opt_worker(args):
     from rdkit import Chem
 
-    conf_id, mol, conf_dir, solvent, charge = args
+    conf_id, mol, conf_dir, solvent, charge, constraint_file = args
     conf_dir = Path(conf_dir)
     conf_dir.mkdir(parents=True, exist_ok=True)
 
@@ -156,6 +196,8 @@ def _xtb_opt_worker(args):
     if solvent:
         model = "gbsa" if solvent.lower() == "methanol" else "alpb"
         cmd.extend([f"--{model}", solvent])
+    if constraint_file:
+        cmd.extend(["--input", str(constraint_file)])   # diazirine N=N constraint
 
     env = {**os.environ, "OMP_NUM_THREADS": "1,1"}
     xtb_out = conf_dir / "xtb.out"
@@ -206,7 +248,7 @@ def _xtb_opt_worker(args):
 
 
 def xtb_preopt_mol(mol, solvent: str, work_dir: Path,
-                   charge: int, n_procs: int = 1):
+                   charge: int, n_procs: int = 1, constraint_file: Path | None = None):
     work_dir = Path(work_dir)
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -215,7 +257,7 @@ def xtb_preopt_mol(mol, solvent: str, work_dir: Path,
         return None
 
     params_list = [
-        (conf_id, mol, work_dir / f"conf_{conf_id}", solvent, charge)
+        (conf_id, mol, work_dir / f"conf_{conf_id}", solvent, charge, constraint_file)
         for conf_id in conf_ids
     ]
 
@@ -245,7 +287,7 @@ def xtb_preopt_mol(mol, solvent: str, work_dir: Path,
 
 # ── CREST conformer sampling ──────────────────────────────────────────────────
 def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
-              n_threads: int, charge: int = 0) -> Path | None:
+              n_threads: int, charge: int = 0, constraint_file: Path | None = None) -> Path | None:
     work_dir.mkdir(parents=True, exist_ok=True)
     xyz_path = xyz_path.resolve()
 
@@ -259,6 +301,8 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
         "--noreftopo",
         "-notopo",
     ]
+    if constraint_file:
+        cmd.extend(["--cinp", str(constraint_file)])    # diazirine N=N constraint
 
     _log(f"    CREST: {' '.join(cmd)}")
     t0 = time.time()
@@ -288,7 +332,7 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
 
 
 def run_crest_cregen(xyz_path: Path, work_dir: Path, solvent: str,
-                     n_threads: int, charge: int = 0) -> Path | None:
+                     n_threads: int, charge: int = 0, constraint_file: Path | None = None) -> Path | None:
     """Run CREST --cregen on existing crest_rotamers_0.xyz, skipping the MTD phase."""
     rotamers = work_dir.resolve() / "crest_rotamers_0.xyz"
     if not rotamers.exists() or rotamers.stat().st_size == 0:
@@ -303,6 +347,8 @@ def run_crest_cregen(xyz_path: Path, work_dir: Path, solvent: str,
         "--chrg", str(charge),
         "--alpb", solvent,
     ]
+    if constraint_file:
+        cmd.extend(["--cinp", str(constraint_file)])    # diazirine N=N constraint
 
     _log(f"    CREST --cregen: {' '.join(cmd)}")
     _log(f"    CREST --cregen: refining {rotamers.stat().st_size/1e6:.0f} MB rotamers file")
@@ -568,6 +614,16 @@ def process_compound(cpd: dict, work_base: Path,
     _log(f"  Step 1 done: {mol_embedded.GetNumConformers()} conformers")
     _template_mol = mol_embedded
 
+    # Auto-detect a diazirine; if present, build the N=N constraint file (1-based indices,
+    # consistent with the xyz atom order) once and reuse it for both solvents.
+    nn_atoms = diazirine_nn_atoms(mol_embedded)
+    constraint_file = None
+    if nn_atoms is not None:
+        constraint_file = write_constraint_file(
+            (work_base / "diazirine_constrain.inp").resolve(), nn_atoms)
+        _log(f"  Diazirine detected → constraining N=N (atoms {nn_atoms[0]},{nn_atoms[1]}) "
+             f"to {DIAZIRINE_NN} Å [prevents GFN2's spurious ~1.43 Å]")
+
     failed_solvents = []
 
     for solvent, label in [(SOLVENT_AQ, LABEL_AQ), (SOLVENT_MEM, LABEL_MEM)]:
@@ -599,14 +655,16 @@ def process_compound(cpd: dict, work_base: Path,
             _log(f"  Steps 2-3: rotamers found ({existing_rotamers.stat().st_size/1e6:.0f} MB)"
                  f" + start xyz exists — skipping xTB, running --cregen")
             try:
-                raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent, n_threads, charge)
+                raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent, n_threads, charge,
+                                                constraint_file=constraint_file)
             except Exception as e:
                 print(f"      ⚠ CREST --cregen error: {e}")
                 raw_ensemble = None
         else:
             xtb_dir = sol_dir / "xtb_opt"
             _log(f"  Step 2: xTB pre-opt ({mol_embedded.GetNumConformers()} conformers)...")
-            mol_min = xtb_preopt_mol(mol_embedded, solvent, xtb_dir, charge, n_procs=n_threads)
+            mol_min = xtb_preopt_mol(mol_embedded, solvent, xtb_dir, charge,
+                                     n_procs=n_threads, constraint_file=constraint_file)
             if mol_min is None:
                 _log(f"  ⚠ All xTB jobs failed — skipping {label}")
                 result[f"{label}_status"] = "failed"
@@ -621,7 +679,8 @@ def process_compound(cpd: dict, work_base: Path,
                      f" — running --cregen to skip MTDs")
                 _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(), xyz_in, comment=smi)
                 try:
-                    raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent, n_threads, charge)
+                    raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent, n_threads, charge,
+                                                constraint_file=constraint_file)
                 except Exception as e:
                     print(f"      ⚠ CREST --cregen error: {e}")
                     raw_ensemble = None
@@ -629,7 +688,8 @@ def process_compound(cpd: dict, work_base: Path,
                 _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(), xyz_in, comment=smi)
                 _log(f"  Step 3: CREST iMTD-GC ({solvent})...")
                 try:
-                    raw_ensemble = run_crest(xyz_in, crest_dir, solvent, n_threads, charge)
+                    raw_ensemble = run_crest(xyz_in, crest_dir, solvent, n_threads, charge,
+                                             constraint_file=constraint_file)
                 except Exception as e:
                     print(f"      ⚠ CREST error: {e}")
                     raw_ensemble = None

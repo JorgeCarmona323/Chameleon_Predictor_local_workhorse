@@ -1,3 +1,4 @@
+# env: chameleon-sim
 """
 submit_tier2_slurm.py
 ---------------------
@@ -72,6 +73,11 @@ COMPOUNDS = [
     {"idx": 13, "short": "DOPCdz_S",    "name": "DOPC_3-12-8-12_S_diazirine", "permeable": True},
     {"idx": 14, "short": "DOPCsardz_R", "name": "DOPC_3-12-10-12_R_diazirine", "permeable": True},
     {"idx": 15, "short": "DOPCsardz_S", "name": "DOPC_3-12-10-12_S_diazirine", "permeable": True},
+    # N=N-constrained reruns (v2) of the diazirine compounds 12-15:
+    {"idx": 16, "short": "DOPCdz_R_v2",    "name": "DOPC_3-12-8-12_R_diazirine_v2",  "permeable": True},
+    {"idx": 17, "short": "DOPCdz_S_v2",    "name": "DOPC_3-12-8-12_S_diazirine_v2",  "permeable": True},
+    {"idx": 18, "short": "DOPCsardz_R_v2", "name": "DOPC_3-12-10-12_R_diazirine_v2", "permeable": True},
+    {"idx": 19, "short": "DOPCsardz_S_v2", "name": "DOPC_3-12-10-12_S_diazirine_v2", "permeable": True},
 ]
 
 

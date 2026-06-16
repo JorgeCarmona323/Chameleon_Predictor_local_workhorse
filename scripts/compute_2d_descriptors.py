@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 compute_2d_descriptors.py
 -------------------------

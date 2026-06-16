@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 3dphys_descriptors_v2.py
 ------------------------

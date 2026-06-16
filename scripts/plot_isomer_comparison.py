@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 plot_isomer_comparison.py
 -------------------------
@@ -83,8 +84,8 @@ for col in ["TPSA_2d", "MolLogP_Crippen", "MolWt", "NumHDonors", "NumHAcceptors"
 ed = pd.read_csv("results/ensemble_descriptors_dopc_rs.csv").set_index("compound")
 r3d, s3d = ed.loc["DOPC_R"], ed.loc["DOPC_S"]
 three_d_cols = [
-    "water_bw_psa", "water_bw_hb", "water_bw_rg", "water_bw_spherocity",
-    "water_bw_asphericity", "water_p_dominant", "mem_bw_psa", "mem_bw_hb",
+    "water_bw_psa", "water_bw_IMHB", "water_bw_rg", "water_bw_spherocity",
+    "water_bw_asphericity", "water_p_dominant", "mem_bw_psa", "mem_bw_IMHB",
 ]
 three_d = {c: reldiff(float(r3d[c]), float(s3d[c])) for c in three_d_cols}
 

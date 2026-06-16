@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 compare_methods_csa.py
 ----------------------

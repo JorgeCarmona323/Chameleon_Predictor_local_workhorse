@@ -1,3 +1,4 @@
+# env: chameleon-calc
 """
 ensemble_descriptors.py
 -----------------------
@@ -13,6 +14,22 @@ cross-solvent descriptors are water − CHCl3 differences.
 Descriptor groups (see docs/descriptor_framework.md): 2 (cis-amide), 3 (ddG),
 5 (Boltzmann polarity), 6 (shape). Witek congruent + kinetic barrier intentionally
 omitted (see docs/ml_descriptor_implications.md, 2026-05-31 decision).
+
+v3 additions (2026-06-14; populations stay GFN2-xTB ENERGY-weighted, i.e. CREMP-consistent).
+Per docs/experiments/2026-06-13_descriptor_literature_review.md:
+  H-bonds (recomputed from geometry; renamed from bw_hb): bw_IMHB (total), bw_IMHBD/bw_IMHBA
+    (distinct donors/acceptors engaged), bw_IMHB_bb/bw_IMHB_res (backbone-transannular vs
+    side-chain). bb + res == IMHB.
+  surface (phys_descriptors_v3): bw_SA_HD (donor-H surface, was bw_hbd_sasa), bw_SA_HA
+    (acceptor-atom surface), bw_hydrophobic_sasa, bw_amphi_moment
+  regime-1 ensemble fluctuation: std_rg, std_asphericity, std_amphi_moment (Boltzmann-
+    weighted std = configurational fluctuation amplitude), omega_circvar (backbone
+    cis/trans circular variance), n_eff (effective conformer count, nConf20 analog)
+Cross-solvent deltas mirror these (delta_IMHB, delta_IMHB_bb/res, delta_SA_HD, delta_SA_HA, ...).
+NOTE: bw_hb -> bw_IMHB and bw_hbd_sasa -> bw_SA_HD are renames; update any consumer that
+read the old names (done: plot_isomer_comparison.py).
+Regime 2 (Hessian/CENSO free-energy reweighting) is deliberately NOT applied here — it
+would change populations off the CREMP footing; see the literature-review doc.
 
 Usage:
   python ensemble_descriptors.py --run-dir results/runs/run_..._5_DOPC_R --name DOPC_R
@@ -34,7 +51,11 @@ import pandas as pd
 from rdkit import Chem, RDLogger
 from rdkit.Chem import Descriptors3D, rdFreeSASA
 
-from phys_descriptors_v2 import compute_psa_xyz, count_hbonds_xyz, boltzmann_weights
+from phys_descriptors_v3 import (
+    compute_psa_xyz, count_hbonds_xyz, boltzmann_weights,
+    surface_descriptors_mol, effective_nconf,
+    imhb_descriptors_mol, backbone_hbond_atoms,
+)
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -131,9 +152,13 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
 
     amide_tuples = amide_ring_bonds(mols[0])
     n_amide = len(amide_tuples)
+    backbone_atoms = backbone_hbond_atoms(mols[0])  # ring + carbonyl O's = backbone for IMHB
 
     rg, npr1, npr2, asph, sphe, tsasa = [], [], [], [], [], []
+    hbd_l, hba_l, hydro_l, amphi_l = [], [], [], []        # v3 surface descriptors
+    imhb_l, imhbd_l, imhba_l, imhb_bb_l, imhb_res_l = [], [], [], [], []  # IMHB breakdown
     cis_flags = np.zeros((len(mols), n_amide), dtype=float)
+    omega_vals = np.full((len(mols), n_amide), np.nan, dtype=float)  # regime-1 circular variance
 
     for i, m in enumerate(mols):
         cid = m.GetConformer().GetId()
@@ -147,9 +172,17 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
             rg.append(np.nan); npr1.append(np.nan); npr2.append(np.nan)
             asph.append(np.nan); sphe.append(np.nan)
         tsasa.append(total_sasa(m, cid))
+        sd = surface_descriptors_mol(m, cid)    # v3: SA_HD, SA_HA, hydrophobic SASA, amphi moment
+        hbd_l.append(sd["hbd_sasa"]); hba_l.append(sd["hba_sasa"])
+        hydro_l.append(sd["hydrophobic_sasa"])
+        amphi_l.append(sd["amphi_moment"])
+        ih = imhb_descriptors_mol(m, cid, backbone_atoms)   # IMHB total + donor/acceptor + bb/res
+        imhb_l.append(ih["imhb"]); imhbd_l.append(ih["imhbd"]); imhba_l.append(ih["imhba"])
+        imhb_bb_l.append(ih["imhb_bb"]); imhb_res_l.append(ih["imhb_res"])
         coords = m.GetConformer().GetPositions()
         for j, tup in enumerate(amide_tuples):
             omega = _dihedral(*[coords[k] for k in tup])
+            omega_vals[i, j] = omega
             cis_flags[i, j] = 1.0 if abs(omega) < CIS_OMEGA_CUTOFF else 0.0
 
     def bw(arr):
@@ -160,8 +193,34 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
         ww = w[mask] / w[mask].sum()
         return float(np.dot(ww, arr[mask]))
 
+    def bw_std(arr):
+        """Boltzmann-weighted std = regime-1 configurational fluctuation amplitude."""
+        arr = np.asarray(arr, dtype=float)
+        mask = np.isfinite(arr)
+        if mask.sum() < 2:
+            return float("nan")
+        ww = w[mask] / w[mask].sum()
+        mean = np.dot(ww, arr[mask])
+        var = np.dot(ww, (arr[mask] - mean) ** 2)
+        return float(np.sqrt(max(var, 0.0)))
+
+    def omega_circvar():
+        """Mean Boltzmann-weighted circular variance of backbone omega dihedrals.
+        0 = rigid (all conformers same cis/trans geometry), →1 = freely rotating."""
+        if n_amide == 0:
+            return float("nan")
+        cvs = []
+        for j in range(n_amide):
+            ang = np.deg2rad(omega_vals[:, j])
+            mask = np.isfinite(ang)
+            if mask.sum() < 2:
+                continue
+            ww = w[mask] / w[mask].sum()
+            R = np.hypot(np.dot(ww, np.cos(ang[mask])), np.dot(ww, np.sin(ang[mask])))
+            cvs.append(1.0 - R)
+        return float(np.mean(cvs)) if cvs else float("nan")
+
     psa = ens["psa_json"]
-    hb = ens["hb_json"]
     cis_prob = (w[:, None] * cis_flags).sum(axis=0)  # per amide bond
 
     # dominant conformer = highest Boltzmann weight
@@ -170,7 +229,12 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
     out = {
         f"{prefix}_n_confs": ens["n"],
         f"{prefix}_bw_psa": round(bw(psa), 2),
-        f"{prefix}_bw_hb": round(bw(hb), 3),
+        # ── intramolecular H-bonds (recomputed from geometry; bb+res == IMHB) ──
+        f"{prefix}_bw_IMHB": round(bw(imhb_l), 3),       # total (was bw_hb)
+        f"{prefix}_bw_IMHBD": round(bw(imhbd_l), 3),     # distinct donors engaged
+        f"{prefix}_bw_IMHBA": round(bw(imhba_l), 3),     # distinct acceptors engaged
+        f"{prefix}_bw_IMHB_bb": round(bw(imhb_bb_l), 3), # backbone (transannular)
+        f"{prefix}_bw_IMHB_res": round(bw(imhb_res_l), 3),  # side-chain (residue)
         f"{prefix}_bw_rg": round(bw(rg), 3),
         f"{prefix}_bw_npr1": round(bw(npr1), 4),
         f"{prefix}_bw_npr2": round(bw(npr2), 4),
@@ -181,6 +245,17 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
         f"{prefix}_sasa_total": round(bw(tsasa), 1),
         f"{prefix}_p_dominant": round(float(w[dom]), 3),
         f"{prefix}_n_amide": n_amide,
+        # ── v3 surface descriptors (Boltzmann-weighted means) ──
+        f"{prefix}_bw_SA_HD": round(bw(hbd_l), 2),              # donor-H surface (Rzepiela 2022)
+        f"{prefix}_bw_SA_HA": round(bw(hba_l), 2),              # acceptor-atom surface
+        f"{prefix}_bw_hydrophobic_sasa": round(bw(hydro_l), 2),  # ASA_H
+        f"{prefix}_bw_amphi_moment": round(bw(amphi_l), 3),      # integy/amphipathic moment
+        # ── regime-1 ensemble fluctuation (same E-weighted ensemble, variance not mean) ──
+        f"{prefix}_std_rg": round(bw_std(rg), 3),
+        f"{prefix}_std_asphericity": round(bw_std(asph), 4),
+        f"{prefix}_std_amphi_moment": round(bw_std(amphi_l), 3),
+        f"{prefix}_omega_circvar": round(omega_circvar(), 4),
+        f"{prefix}_n_eff": effective_nconf(w),                   # nConf20 analog
     }
     for j in range(n_amide):
         out[f"{prefix}_cis_prob_{j}"] = round(float(cis_prob[j]), 3)
@@ -193,9 +268,15 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
 def cross_solvent(water: dict, mem: dict) -> dict:
     out = {}
     pairs = [
-        ("delta_psa", "bw_psa"), ("delta_hb", "bw_hb"), ("delta_rg", "bw_rg"),
+        ("delta_psa", "bw_psa"), ("delta_IMHB", "bw_IMHB"), ("delta_rg", "bw_rg"),
+        ("delta_IMHB_bb", "bw_IMHB_bb"), ("delta_IMHB_res", "bw_IMHB_res"),
         ("delta_npr1", "bw_npr1"), ("delta_npr2", "bw_npr2"),
         ("delta_asphericity", "bw_asphericity"),
+        # v3 surface deltas (cross-solvent change in donor/acceptor exposure, hydrophobicity, amphipathicity)
+        ("delta_SA_HD", "bw_SA_HD"),
+        ("delta_SA_HA", "bw_SA_HA"),
+        ("delta_hydrophobic_sasa", "bw_hydrophobic_sasa"),
+        ("delta_amphi_moment", "bw_amphi_moment"),
     ]
     for out_key, feat in pairs:
         wv, mv = water.get(f"water_{feat}"), mem.get(f"mem_{feat}")

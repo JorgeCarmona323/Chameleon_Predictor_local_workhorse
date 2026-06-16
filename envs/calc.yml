@@ -1,0 +1,21 @@
+# chameleon-calc — CALCULATIONS env (descriptors, 2D/3D, figures)
+# Role: read CREST ensembles, compute descriptors, PRODUCE feature CSVs.
+# Mirror of the working `rdkit_env`. Curated (not a full export) so it stays
+# portable across Windows (local) and Linux (cluster).
+#
+#   conda env create -f envs/calc.yml
+#   conda activate chameleon-calc
+#
+name: chameleon-calc
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - rdkit=2025.09          # 3D descriptors, rdFreeSASA, Descriptors3D
+  - numpy>=2.2
+  - pandas>=2.2
+  - scipy
+  - matplotlib-base>=3.10
+  - python-docx            # export_docx.py
+  - python-pptx            # export_slides.py / pipeline_overview_slides.py
+  - pip

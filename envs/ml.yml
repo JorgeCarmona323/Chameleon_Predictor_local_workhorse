@@ -1,0 +1,24 @@
+# chameleon-ml — ML MODELING env (benchmark, UMAP, feature importance)
+# Role: CONSUME the feature CSVs produced by chameleon-calc, train/evaluate models.
+# Deliberately has NO rdkit — features arrive pre-computed as CSV, so this env
+# never shares (or fights over) rdkit/numpy pins with the calc env.
+#
+#   conda env create -f envs/ml.yml
+#   conda activate chameleon-ml
+#
+name: chameleon-ml
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - scikit-learn>=1.4
+  - xgboost
+  - lightgbm
+  - pandas>=2.2
+  - numpy>=2.0
+  - matplotlib-base
+  - seaborn
+  - umap-learn             # umap_visualization.py
+  - shap                   # feature-importance for the descriptor benchmark
+  - joblib
+  - pip

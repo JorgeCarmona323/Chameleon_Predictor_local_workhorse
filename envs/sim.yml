@@ -1,0 +1,22 @@
+# chameleon-sim — SIMULATIONS env (conformer generation)
+# Role: GFN2-xTB / CREST conformer search. Built on the HPC cluster (Linux);
+# this file documents/reproduces the cluster env currently named `chameleon_crest212`.
+# CREST is not installed in any local Windows env — simulations run on the cluster.
+#
+#   conda env create -f envs/sim.yml          # run on the cluster
+#   conda activate chameleon-sim
+#
+name: chameleon-sim
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.10
+  - crest=2.12             # PINNED: CREST 3.x crashes on these macrocycles (crest_xtbsp / IEEE_UNDERFLOW)
+  - xtb                    # GFN2-xTB engine. Also provides `xtb --ohess` for the regime-2 Hessian job.
+  - numpy
+  # Regime 2 (Hessian -> Gibbs free-energy reweighting of the CREST ensemble, CENSO-style):
+  # - pip:
+  #     - censo            # uncomment when we add G-weighting; runs on the cluster alongside xtb
+#
+# Separate, NOT included here: the MACE-OFF / OpenMM GPU stack (conda env `MACE`,
+# benchmark_mace_vs_xtb.py) is a distinct pip/GPU-managed simulation env — see project_mace_off_pipeline.

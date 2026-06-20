@@ -53,7 +53,7 @@ from rdkit.Chem import Descriptors3D, rdFreeSASA
 
 from phys_descriptors_v3 import (
     compute_psa_xyz, count_hbonds_xyz, boltzmann_weights,
-    surface_descriptors_mol, effective_nconf,
+    surface_descriptors_mol, effective_nconf, weighted_rmsf, kier_flexibility,
     imhb_descriptors_mol, backbone_hbond_atoms,
 )
 
@@ -155,7 +155,7 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
     backbone_atoms = backbone_hbond_atoms(mols[0])  # ring + carbonyl O's = backbone for IMHB
 
     rg, npr1, npr2, asph, sphe, tsasa = [], [], [], [], [], []
-    hbd_l, hba_l, hydro_l, amphi_l = [], [], [], []        # v3 surface descriptors
+    hbd_l, hba_l, hydro_l, amphi_l, psa_l = [], [], [], [], []   # v3 surface descriptors
     imhb_l, imhbd_l, imhba_l, imhb_bb_l, imhb_res_l = [], [], [], [], []  # IMHB breakdown
     cis_flags = np.zeros((len(mols), n_amide), dtype=float)
     omega_vals = np.full((len(mols), n_amide), np.nan, dtype=float)  # regime-1 circular variance
@@ -171,11 +171,11 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
         except Exception:
             rg.append(np.nan); npr1.append(np.nan); npr2.append(np.nan)
             asph.append(np.nan); sphe.append(np.nan)
-        tsasa.append(total_sasa(m, cid))
-        sd = surface_descriptors_mol(m, cid)    # v3: SA_HD, SA_HA, hydrophobic SASA, amphi moment
+        sd = surface_descriptors_mol(m, cid)    # literature 3D-PSA, SA_HD/HA, hydrophobic, amphi
         hbd_l.append(sd["hbd_sasa"]); hba_l.append(sd["hba_sasa"])
         hydro_l.append(sd["hydrophobic_sasa"])
         amphi_l.append(sd["amphi_moment"])
+        psa_l.append(sd["psa"]); tsasa.append(sd["total_sasa"])   # consistent Bondi-radii SASA
         ih = imhb_descriptors_mol(m, cid, backbone_atoms)   # IMHB total + donor/acceptor + bb/res
         imhb_l.append(ih["imhb"]); imhbd_l.append(ih["imhbd"]); imhba_l.append(ih["imhba"])
         imhb_bb_l.append(ih["imhb_bb"]); imhb_res_l.append(ih["imhb_res"])
@@ -220,7 +220,6 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
             cvs.append(1.0 - R)
         return float(np.mean(cvs)) if cvs else float("nan")
 
-    psa = ens["psa_json"]
     cis_prob = (w[:, None] * cis_flags).sum(axis=0)  # per amide bond
 
     # dominant conformer = highest Boltzmann weight
@@ -228,7 +227,7 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
 
     out = {
         f"{prefix}_n_confs": ens["n"],
-        f"{prefix}_bw_psa": round(bw(psa), 2),
+        f"{prefix}_bw_psa": round(bw(psa_l), 2),    # literature 3D-PSA (N/O + polar H + oxidized S)
         # ── intramolecular H-bonds (recomputed from geometry; bb+res == IMHB) ──
         f"{prefix}_bw_IMHB": round(bw(imhb_l), 3),       # total (was bw_hb)
         f"{prefix}_bw_IMHBD": round(bw(imhbd_l), 3),     # distinct donors engaged
@@ -240,8 +239,8 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
         f"{prefix}_bw_npr2": round(bw(npr2), 4),
         f"{prefix}_bw_asphericity": round(bw(asph), 4),
         f"{prefix}_bw_spherocity": round(bw(sphe), 4),
-        f"{prefix}_psa_std": round(float(np.nanstd(psa)), 2),
-        f"{prefix}_psa_spread": round(float(np.nanmax(psa) - np.nanmin(psa)), 2),
+        f"{prefix}_psa_std": round(bw_std(psa_l), 2),     # Boltzmann-weighted (was unweighted)
+        f"{prefix}_psa_spread": round(float(np.nanmax(psa_l) - np.nanmin(psa_l)), 2),
         f"{prefix}_sasa_total": round(bw(tsasa), 1),
         f"{prefix}_p_dominant": round(float(w[dom]), 3),
         f"{prefix}_n_amide": n_amide,
@@ -255,7 +254,11 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
         f"{prefix}_std_asphericity": round(bw_std(asph), 4),
         f"{prefix}_std_amphi_moment": round(bw_std(amphi_l), 3),
         f"{prefix}_omega_circvar": round(omega_circvar(), 4),
-        f"{prefix}_n_eff": effective_nconf(w),                   # nConf20 analog
+        f"{prefix}_rmsf": weighted_rmsf(mols, w),               # threshold-free flexibility (preferred)
+        # NOTE: p_dominant + n_eff are discretization-sensitive (conformer- not fold-level);
+        # superseded by rmsf for the flexibility axis. Kept for benchmark comparison only.
+        f"{prefix}_n_eff": effective_nconf(w),                   # nConf20 analog (raw; see note)
+        f"{prefix}_kier_phi": kier_flexibility(mols[0]),         # Kier 2D flexibility (Begnini 2021)
     }
     for j in range(n_amide):
         out[f"{prefix}_cis_prob_{j}"] = round(float(cis_prob[j]), 3)
@@ -271,7 +274,7 @@ def cross_solvent(water: dict, mem: dict) -> dict:
         ("delta_psa", "bw_psa"), ("delta_IMHB", "bw_IMHB"), ("delta_rg", "bw_rg"),
         ("delta_IMHB_bb", "bw_IMHB_bb"), ("delta_IMHB_res", "bw_IMHB_res"),
         ("delta_npr1", "bw_npr1"), ("delta_npr2", "bw_npr2"),
-        ("delta_asphericity", "bw_asphericity"),
+        ("delta_asphericity", "bw_asphericity"), ("delta_rmsf", "rmsf"),
         # v3 surface deltas (cross-solvent change in donor/acceptor exposure, hydrophobicity, amphipathicity)
         ("delta_SA_HD", "bw_SA_HD"),
         ("delta_SA_HA", "bw_SA_HA"),

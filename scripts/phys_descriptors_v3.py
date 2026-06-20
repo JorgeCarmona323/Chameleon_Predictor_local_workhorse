@@ -13,7 +13,8 @@ v3 adds the literature-validated surface/shape descriptors we were missing
 computable from ensembles we already have — no new CREST runs:
 
   surface_descriptors_mol / surface_descriptors_xyz
-      psa                 — 3D polar SASA  (N/O/S/P)            [== v2 compute_psa_xyz target]
+      psa                 — 3D PSA: SASA over N/O + polar H + oxidized S [Ono 2019/Begnini 2021 def;
+                            reduced S (thiophene/thioether/thiol) excluded per Ertl TPSA convention]
       hbd_sasa            — SA_HD: SASA of H-bond DONOR H's     [Rzepiela 2022, top descriptor]
       hba_sasa            — SA_HA: SASA of H-bond ACCEPTOR atoms (N/O)
       hydrophobic_sasa    — ASA_H: SASA of apolar atoms (C, H-on-C) [Rzepiela 2022]
@@ -25,6 +26,8 @@ computable from ensembles we already have — no new CREST runs:
                             donors/acceptors), imhb_bb/imhb_res (backbone vs side-chain)
   effective_nconf         — exp(Shannon entropy of Boltzmann weights):
                             in-ensemble flexibility analog of nConf20 [Wicker & Cooper]
+  weighted_rmsf           — Boltzmann-weighted RMSF (threshold-free ensemble flexibility, Å)
+  kier_flexibility        — Kier Φ = κ₁·κ₂/N_heavy (2D molecular flexibility) [Begnini 2021]
 
 The rationale (keep everything, add the missing, benchmark to decide) is recorded
 in the literature-review doc. v3 is purely additive so the in-house ML benchmark
@@ -127,8 +130,16 @@ def surface_descriptors_mol(mol, conf_id: int = -1) -> dict:
         return out
 
     is_polar, is_donor_h, is_apolar, is_acceptor = _atom_classes(mol)
+    # 3D PSA — Ono 2019 / Begnini 2021 definition: SASA over N/O acceptors + polar H attached
+    # to N/O, + OXIDIZED sulfur only (S=O: sulfoxide/sulfone/sulfonamide). Reduced S (thiophene,
+    # thioether, thiol, disulfide) contributes 0 — the Ertl TPSA sulfur convention.
+    oxidized_s = np.array([
+        a.GetSymbol() == "S" and any(
+            b.GetBondTypeAsDouble() == 2.0 and b.GetOtherAtom(a).GetSymbol() == "O"
+            for b in a.GetBonds())
+        for a in mol.GetAtoms()])
     out["total_sasa"] = round(float(sasa.sum()), 2)
-    out["psa"] = round(float(sasa[is_polar].sum()), 2)
+    out["psa"] = round(float(sasa[is_acceptor | is_donor_h | oxidized_s].sum()), 2)
     out["hbd_sasa"] = round(float(sasa[is_donor_h].sum()), 2)   # SA_HD: donor-H surface
     out["hba_sasa"] = round(float(sasa[is_acceptor].sum()), 2)  # SA_HA: acceptor-atom surface
     out["hydrophobic_sasa"] = round(float(sasa[is_apolar].sum()), 2)
@@ -264,3 +275,53 @@ def effective_nconf(weights) -> float:
     w = w / w.sum()
     h = -(w * np.log(w)).sum()
     return round(float(np.exp(h)), 3)
+
+
+def weighted_rmsf(mols, weights, heavy_only: bool = True) -> float:
+    """Boltzmann-weighted root-mean-square fluctuation (Å) of the ensemble.
+
+    The clean, THRESHOLD-FREE, count-free flexibility descriptor: aligns all conformers
+    to the highest-weight one, then measures the weighted geometric spread about the
+    weighted-mean structure. Unlike p_dominant / n_eff it does not depend on how finely
+    CREST discretizes a basin (near-duplicate conformers sit on the mean and contribute
+    ~0), nor on a clustering RMSD threshold. High = floppy, low = rigid.
+    """
+    from rdkit import Chem
+    from rdkit.Chem import rdMolAlign
+
+    w = np.asarray(weights, dtype=float)
+    keep = np.where(np.isfinite(w) & (w > 0))[0]
+    if keep.size < 2:
+        return float("nan")
+    ref = int(keep[np.argmax(w[keep])])           # highest-weight conformer = alignment frame
+    order = [ref] + [int(i) for i in keep if i != ref]
+
+    base = Chem.Mol(mols[ref]); base.RemoveAllConformers()
+    for i in order:
+        base.AddConformer(Chem.Conformer(mols[i].GetConformer()), assignId=True)
+    atom_ids = [a.GetIdx() for a in base.GetAtoms()
+                if (a.GetAtomicNum() > 1 or not heavy_only)]
+    try:
+        rdMolAlign.AlignMolConformers(base, atomIds=atom_ids)
+    except Exception:
+        return float("nan")
+
+    P = np.array([c.GetPositions()[atom_ids] for c in base.GetConformers()])  # (N, A, 3)
+    ww = w[order]; ww = ww / ww.sum()
+    mean = (ww[:, None, None] * P).sum(axis=0)                                 # (A, 3)
+    msf = (ww[:, None] * ((P - mean) ** 2).sum(axis=2)).sum(axis=0)            # (A,)
+    return round(float(np.sqrt(msf.mean())), 3)
+
+
+def kier_flexibility(mol) -> float:
+    """Kier molecular flexibility index Φ = κ₁·κ₂ / N_heavy [Begnini 2021; they use Φ < 10 as
+    the threshold where conformational sampling reliably predicts macrocycle permeability].
+    Topological (2D) — identical for stereoisomers; varies with the backbone graph (e.g.
+    azetidine vs sarcosine). Computed once per molecule, not per conformer/solvent."""
+    from rdkit import Chem
+    from rdkit.Chem import rdMolDescriptors
+    m = Chem.RemoveHs(mol)
+    n = m.GetNumHeavyAtoms()
+    if n == 0:
+        return float("nan")
+    return round(float(rdMolDescriptors.CalcKappa1(m) * rdMolDescriptors.CalcKappa2(m) / n), 3)

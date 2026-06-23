@@ -30,6 +30,11 @@ Compound index:
  17 = DOPCdz_S_v2    (N=N-constrained rerun of 13)
  18 = DOPCsardz_R_v2 (N=N-constrained rerun of 14)
  19 = DOPCsardz_S_v2 (N=N-constrained rerun of 15)
+ 20 = 1-6-4-7_xylene     (DOPC 1-6-4-7, sulfonate residue)
+ 21 = 1-6-4-7_diazirine  (DOPC 1-6-4-7 + CF3-diazirine; N=N auto-constrained)
+ 22 = 2-9-9-8_xylene     (DOPC 2-9-9-8, furan residue)
+ 23 = 2-9-9-8_diazirine  (DOPC 2-9-9-8 + CF3-diazirine; N=N auto-constrained)
+ 24 = 6-4-4-13_diazirine (Brain 6-4-4-13 + CF3-diazirine; N=N auto-constrained)
 """
 
 from __future__ import annotations
@@ -268,6 +273,49 @@ REFERENCE_COMPOUNDS = [
         "cycpeptmpdb_id": None,
         "smiles": "CN(CC(N[C@@H](CO)C(N[C@H](c1ccc[s]1)C(N[C@@H](CSCc1cc(CSC[C@@H](C(N[C@@H]2CO)=O)NC(CCC#C)=O)cc(C3(C(F)(F)F)N=N3)c1)C(N)=O)=O)=O)=O)C2=O",
         "source": "Hu lab — DOPC 3-12-10-12 S (sarcosine) + CF3-diazirine; N=N-constrained rerun of idx 15",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    # ── New 6-mer hits (2026-06-23 batch): clearer {code}_{linker} naming ──────────
+    # SMILES from data/new_6mer_compounds_added_diazirine_20260623.csv (canonicalized).
+    # Diazirine entries auto-get the N=N distance constraint via crest_conformers.py.
+    {
+        "name": "DOPC_1-6-4-7_xylene",
+        "short": "1-6-4-7_xylene",
+        "cycpeptmpdb_id": None,
+        "smiles": "C#CCCC(=O)N[C@H]1CSCc2ccccc2CSC[C@@H](C(N)=O)NC(=O)[C@H](CS(=O)(=O)O)NC(=O)[C@@H]([C@H](C)O)NC(=O)[C@@H]2CCCCN2C(=O)CNC1=O",
+        "source": "Hu lab — DOPC 1-6-4-7 (xylene linker)",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_1-6-4-7_diazirine",
+        "short": "1-6-4-7_diazirine",
+        "cycpeptmpdb_id": None,
+        "smiles": "C#CCCC(=O)N[C@H]1CSCc2cc(cc(C3(C(F)(F)F)N=N3)c2)CSC[C@@H](C(N)=O)NC(=O)[C@H](CS(=O)(=O)O)NC(=O)[C@@H]([C@H](C)O)NC(=O)[C@@H]2CCCCN2C(=O)CNC1=O",
+        "source": "Hu lab — DOPC 1-6-4-7 + CF3-diazirine (N=N auto-constrained)",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_2-9-9-8_xylene",
+        "short": "2-9-9-8_xylene",
+        "cycpeptmpdb_id": None,
+        "smiles": "C#CCCC(=O)N[C@H]1CSCc2ccccc2CSC[C@@H](C(N)=O)NC(=O)C[C@H](c2ccco2)NC(=O)[C@H](CC(C)C)N(C)C(=O)CNC(=O)CN(C)C1=O",
+        "source": "Hu lab — DOPC 2-9-9-8 (xylene linker)",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "DOPC_2-9-9-8_diazirine",
+        "short": "2-9-9-8_diazirine",
+        "cycpeptmpdb_id": None,
+        "smiles": "C#CCCC(=O)N[C@H]1CSCc2cc(cc(C3(C(F)(F)F)N=N3)c2)CSC[C@@H](C(N)=O)NC(=O)C[C@H](c2ccco2)NC(=O)[C@H](CC(C)C)N(C)C(=O)CNC(=O)CN(C)C1=O",
+        "source": "Hu lab — DOPC 2-9-9-8 + CF3-diazirine (N=N auto-constrained)",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "Brain_6-4-4-13_diazirine",
+        "short": "6-4-4-13_diazirine",
+        "cycpeptmpdb_id": None,
+        "smiles": "C#CCCC(=O)N[C@H]1CSCc2cc(cc(C3(C(F)(F)F)N=N3)c2)CSC[C@@H](C(N)=O)NC(=O)C[C@@H](c2cccc3ccccc23)NC(=O)[C@H](C)NC(=O)[C@@H]2CCCCN2C(=O)[C@@H](CO)NC1=O",
+        "source": "Hu lab — Brain 6-4-4-13 + CF3-diazirine (N=N auto-constrained)",
         "pampa": None, "permeable": True, "hbd": None,
     },
 ]

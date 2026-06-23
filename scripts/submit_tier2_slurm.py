@@ -78,6 +78,13 @@ COMPOUNDS = [
     {"idx": 17, "short": "DOPCdz_S_v2",    "name": "DOPC_3-12-8-12_S_diazirine_v2",  "permeable": True},
     {"idx": 18, "short": "DOPCsardz_R_v2", "name": "DOPC_3-12-10-12_R_diazirine_v2", "permeable": True},
     {"idx": 19, "short": "DOPCsardz_S_v2", "name": "DOPC_3-12-10-12_S_diazirine_v2", "permeable": True},
+    # New 6-mer hits (2026-06-23 batch): clearer {code}_{linker} naming. Diazirine entries
+    # auto-get the N=N distance constraint via crest_conformers.py.
+    {"idx": 20, "short": "1-6-4-7_xylene",     "name": "DOPC_1-6-4-7_xylene",      "permeable": True},
+    {"idx": 21, "short": "1-6-4-7_diazirine",  "name": "DOPC_1-6-4-7_diazirine",   "permeable": True},
+    {"idx": 22, "short": "2-9-9-8_xylene",     "name": "DOPC_2-9-9-8_xylene",      "permeable": True},
+    {"idx": 23, "short": "2-9-9-8_diazirine",  "name": "DOPC_2-9-9-8_diazirine",   "permeable": True},
+    {"idx": 24, "short": "6-4-4-13_diazirine", "name": "Brain_6-4-4-13_diazirine", "permeable": True},
 ]
 
 

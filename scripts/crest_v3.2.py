@@ -353,7 +353,8 @@ def run(outdir: Path, max_confs: int | None,
 
     r = process_molecule(smiles=cpd["smiles"], name=cpd["name"], work_base=work_base,
                          solvent_pairs=solvent_pairs, charge=None,
-                         n_threads=n_threads, max_confs=max_confs)
+                         n_threads=n_threads, max_confs=max_confs,
+                         embed_cache_dir=outdir / "embeddings")
 
     manifest = work_base / f"{short}_manifest.json"
     with open(manifest, "w") as f:

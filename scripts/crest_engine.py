@@ -20,6 +20,7 @@ Imported by crest_v3.2.py (reference-compound registry + CLI).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import multiprocessing
 import os
@@ -157,6 +158,78 @@ def embed_rdkit_conformers(mol, n_embed: int = 5000, n_max: int = 50,
     for i in keep:
         new_mol.AddConformer(mol.GetConformer(confs[i].GetId()), assignId=True)
     return new_mol
+
+
+# ── Cached embedding I/O ──────────────────────────────────────────────────────
+# The ETKDG embedding (5000 → 50 diverse conformers) is solvent-independent and the most
+# expensive CPU step. Persisting it lets every solvent leg — including separate runs / SLURM
+# tasks for the same molecule — start from the SAME seeds (consistency) without repeating the
+# embedding (speed). load_or_embed(): if the cache file exists it is reused, else generated.
+def _smiles_key(smiles: str) -> str:
+    """Short stable hash of the (canonical) SMILES, so a cached embedding is reused only for
+    the exact same molecule (guards a short-name collision or an edited SMILES)."""
+    from rdkit import Chem
+    mol = Chem.MolFromSmiles(smiles)
+    canonical = Chem.MolToSmiles(mol) if mol is not None else smiles
+    return hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:10]
+
+
+def write_embedding(mol, path: Path) -> None:
+    """Persist the embedded multi-conformer molecule to SDF (atoms + bonds + all 3D confs).
+    Written to a temp file then atomically renamed, so a concurrent reader never sees a
+    partial file."""
+    from rdkit import Chem
+    tmp = path.with_name(path.name + ".tmp")
+    writer = Chem.SDWriter(str(tmp))
+    for cid in range(mol.GetNumConformers()):
+        writer.write(mol, confId=cid)
+    writer.close()
+    tmp.replace(path)
+
+
+def read_embedding(path: Path):
+    """Load a molecule previously written by write_embedding, rebuilt with all conformers.
+    Returns None if the file is unreadable or empty (caller then regenerates)."""
+    from rdkit import Chem
+    try:
+        supplier = Chem.SDMolSupplier(str(path), removeHs=False, sanitize=True)
+        mols = [m for m in supplier if m is not None]
+    except Exception:
+        return None
+    if not mols:
+        return None
+    base = Chem.Mol(mols[0])
+    base.RemoveAllConformers()
+    for m in mols:
+        if m.GetNumConformers() and m.GetNumAtoms() == base.GetNumAtoms():
+            base.AddConformer(m.GetConformer(), assignId=True)
+    return base if base.GetNumConformers() else None
+
+
+def load_or_embed(mol, cache_path: Path | None):
+    """Reuse a cached embedding if one exists for this molecule, else embed and cache it.
+    cache_path=None disables caching (embed every time). May raise RuntimeError on embed
+    failure (propagated to the caller)."""
+    if cache_path is not None:
+        cache_path = Path(cache_path)
+        if cache_path.exists() and cache_path.stat().st_size > 0:
+            cached = read_embedding(cache_path)
+            if cached is not None and cached.GetNumAtoms() == mol.GetNumAtoms():
+                _log(f"  Step 1: reusing cached embedding "
+                     f"({cached.GetNumConformers()} confs) ← {cache_path.name}")
+                return cached
+            _log(f"  Step 1: cached embedding {cache_path.name} unusable — regenerating")
+
+    mol_embedded = embed_rdkit_conformers(mol)   # may raise RuntimeError
+
+    if cache_path is not None:
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            write_embedding(mol_embedded, cache_path)
+            _log(f"  Step 1: cached embedding → {cache_path}")
+        except Exception as e:
+            _log(f"  Step 1: could not cache embedding ({e}) — continuing without cache")
+    return mol_embedded
 
 
 # ── xTB geometry optimisation ─────────────────────────────────────────────────
@@ -619,7 +692,8 @@ def process_molecule(smiles: str, name: str, work_base: Path,
                      solvent_pairs: list[tuple[str, str]] | None = None,
                      charge: int | None = None, n_threads: int = 1,
                      max_confs: int | None = None,
-                     use_diazirine_constraint: bool = True) -> dict:
+                     use_diazirine_constraint: bool = True,
+                     embed_cache_dir: str | Path | None = None) -> dict:
     """Generate CREST/xTB conformer ensembles for one molecule across one or more
     solvent legs.
 
@@ -629,6 +703,9 @@ def process_molecule(smiles: str, name: str, work_base: Path,
     charge : formal-charge override; default = sum of RDKit formal charges.
     use_diazirine_constraint : auto-detect a diazirine and pin its N=N distance
         (GFN2 otherwise drifts it to ~1.43 Å). A no-op when no diazirine is present.
+    embed_cache_dir : if given, the RDKit embedding is cached here as
+        <short>_<smiles-hash>.sdf and reused by any later run/solvent leg for the same
+        molecule (embed once, reuse everywhere). None disables caching.
     """
     from rdkit import Chem
 
@@ -660,9 +737,13 @@ def process_molecule(smiles: str, name: str, work_base: Path,
 
     work_base.mkdir(parents=True, exist_ok=True)
 
+    cache_path = None
+    if embed_cache_dir is not None:
+        cache_path = Path(embed_cache_dir) / f"{short}_{_smiles_key(smiles)}.sdf"
+
     _log("  Step 1: RDKit ETKDGv3 embedding (5000 → 50)...")
     try:
-        mol_embedded = embed_rdkit_conformers(mol)
+        mol_embedded = load_or_embed(mol, cache_path)
     except RuntimeError as e:
         _log(f"  ⚠ Embedding failed: {e}")
         result["status"] = "failed"
@@ -702,6 +783,7 @@ def generate_conformers(smiles: str, name: str = "molecule",
                         max_confs: int | None = None,
                         solvent_pairs: list[tuple[str, str]] | None = None,
                         use_diazirine_constraint: bool = True,
+                        embed_cache_dir: str | Path | None = None,
                         check_binaries_first: bool = True) -> dict:
     """Generate CREST/xTB conformer ensembles for an **arbitrary SMILES** across the
     given solvent legs — the registry-free front end (used by the notebook).
@@ -716,6 +798,9 @@ def generate_conformers(smiles: str, name: str = "molecule",
     max_confs     : optional cap on conformers kept per solvent (default: keep all)
     solvent_pairs : list of (xtb/CREST solvent, folder label); default SOLVENT_PAIRS_DEFAULT
     use_diazirine_constraint : pin a detected diazirine N=N (no-op if absent)
+    embed_cache_dir : where to cache/reuse the RDKit embedding (default: <outdir>/embeddings,
+        shared across runs so each molecule is embedded once). Pass a different path to
+        relocate it; the engine's process_molecule treats None as "no cache".
     check_binaries_first     : fail fast with a clear message when xtb/crest are missing
 
     Returns
@@ -739,9 +824,11 @@ def generate_conformers(smiles: str, name: str = "molecule",
     if solvent_pairs is None:
         solvent_pairs = list(SOLVENT_PAIRS_DEFAULT)
 
-    # 3. fresh, timestamped run directory
+    # 3. fresh, timestamped run directory; embeddings cached at a stable, shared location
     short = _safe_short(name)
     n_threads = n_threads or os.cpu_count() or 1
+    if embed_cache_dir is None:
+        embed_cache_dir = Path(outdir) / "embeddings"
     work_base = Path(outdir) / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{short}"
     work_base.mkdir(parents=True, exist_ok=True)
     _log(f"Conformer run: {name}  →  {work_base}")
@@ -749,7 +836,8 @@ def generate_conformers(smiles: str, name: str = "molecule",
     # 4. run the engine
     result = process_molecule(smiles, name, work_base, solvent_pairs=solvent_pairs,
                               charge=charge, n_threads=n_threads, max_confs=max_confs,
-                              use_diazirine_constraint=use_diazirine_constraint)
+                              use_diazirine_constraint=use_diazirine_constraint,
+                              embed_cache_dir=embed_cache_dir)
 
     # 5. collect outputs
     solvents_out = {}

@@ -572,9 +572,104 @@ def export_json(conformers: list, psa_vals: list, hb_vals: list,
 
 
 # ── Process one compound ──────────────────────────────────────────────────────
+# ── Registry-free, direct-SMILES entry point (notebook front end) ─────────────
+def check_binaries(require=("xtb", "crest")) -> dict:
+    """Return {binary: resolved_path}. Raise RuntimeError if any required binary is
+    not on PATH, with actionable install guidance. CREST/xTB are external programs;
+    the conformer search cannot run without them."""
+    found = {b: shutil.which(b) for b in require}
+    missing = [b for b, p in found.items() if p is None]
+    if missing:
+        raise RuntimeError(
+            f"Required external binary/binaries not found on PATH: {', '.join(missing)}. "
+            f"The CREST/xTB conformer search cannot run without them. Install with "
+            f"`conda install -c conda-forge xtb crest` (or load your cluster's modules), "
+            f"then restart the kernel/shell so PATH is refreshed.")
+    return found
+
+
+def _safe_short(name: str) -> str:
+    """Filesystem-safe short label derived from a molecule name (used in filenames)."""
+    s = re.sub(r"[^0-9A-Za-z._-]+", "_", (name or "").strip()).strip("_")
+    return (s or "molecule")[:40]
+
+
+def generate_ensembles(smiles: str, name: str = "molecule",
+                       outdir: str | Path = "results/notebook_runs",
+                       charge: int | None = None, n_threads: int | None = None,
+                       max_confs: int | None = None,
+                       check_binaries_first: bool = True) -> dict:
+    """Generate water + chloroform (mem) CREST/xTB conformer ensembles for an **arbitrary
+    SMILES** — the registry-free front end used by the notebook.
+
+    Wraps the existing `process_compound` engine (no logic duplicated); builds a minimal
+    compound record from the SMILES so no entry in `crest_v3.2.REFERENCE_COMPOUNDS` is needed.
+
+    Parameters
+    ----------
+    smiles   : the molecule to sample (validated with RDKit; ValueError if unparseable)
+    name     : optional label (used for the run-dir and file names)
+    outdir   : where the run directory is created
+    charge   : optional formal-charge override (default: auto-derived from the SMILES)
+    n_threads: CPU cores for xTB/CREST (default: all cores)
+    max_confs: cap on conformers kept for the chloroform ensemble (default: engine default, 50)
+    check_binaries_first : if True (default), fail fast with a clear message when xtb/crest
+                           are missing, before doing any work.
+
+    Returns
+    -------
+    dict with: work_dir, result (the raw engine row), water/mem ensemble paths, and `ok`
+    (True iff all four ensemble files were written).
+    """
+    from rdkit import Chem
+
+    # 1. validate the SMILES up front — clear error rather than a deep failure later
+    if not isinstance(smiles, str) or not smiles.strip():
+        raise ValueError("`smiles` must be a non-empty string.")
+    if Chem.MolFromSmiles(smiles) is None:
+        raise ValueError(f"RDKit could not parse SMILES: {smiles!r}. Check the string and try again.")
+
+    # 2. validate external binaries early (CREST/xTB are required)
+    if check_binaries_first:
+        check_binaries()
+
+    # 3. build a registry-free compound record (metadata fields are optional → None)
+    short = _safe_short(name)
+    cpd = {"name": name, "short": short, "smiles": smiles,
+           "cycpeptmpdb_id": None, "pampa": None, "permeable": None}
+
+    # 4. fresh, timestamped run directory
+    n_threads = n_threads or os.cpu_count() or 1
+    work_base = Path(outdir) / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{short}"
+    work_base.mkdir(parents=True, exist_ok=True)
+    _log(f"Direct-SMILES run: {name}  →  {work_base}")
+
+    # 5. run the existing engine (with optional charge override)
+    result = process_compound(cpd, work_base, max_confs=max_confs, dry_run=False,
+                              n_threads=n_threads, charge_override=charge)
+
+    # 6. collect + verify outputs
+    paths = {sol: {"sdf": work_base / sol / "ensemble.sdf",
+                   "json": work_base / sol / "ensemble.json"}
+             for sol in ("water", "mem")}
+    ok = all(p.exists() for sol in paths for p in paths[sol].values())
+    return {"work_dir": work_base, "result": result,
+            "water": paths["water"], "mem": paths["mem"], "ok": ok}
+
+
 def process_compound(cpd: dict, work_base: Path,
                      max_confs: int | None, dry_run: bool,
-                     n_threads: int) -> dict:
+                     n_threads: int, charge_override: int | None = None,
+                     solvent_pairs: list[tuple[str, str]] | None = None) -> dict:
+    """Run the CREST/xTB pipeline for one compound across one or more solvent legs.
+
+    solvent_pairs : optional list of (xtb_solvent, label) legs overriding the default
+        [(water, water), (chcl3, mem)]. The FIRST leg is the polar reference used for
+        the ΔPSA/ΔHB deltas; every other leg is treated as apolar (its ensemble is
+        capped to max_confs, exactly like the old chloroform "mem" leg). Example for a
+        water/cyclohexane partition run:
+            [("water", "water"), ("cyclohexane", "cyclohexane")]
+    """
     from rdkit import Chem
 
     name  = cpd["name"]
@@ -602,8 +697,10 @@ def process_compound(cpd: dict, work_base: Path,
         print(f"  ⚠ Invalid SMILES")
         return result
     mol = Chem.AddHs(mol)
-    charge = sum(atom.GetFormalCharge() for atom in mol.GetAtoms())
-    _log(f"  Formal charge: {charge}  |  Atoms (with H): {mol.GetNumAtoms()}")
+    charge = (charge_override if charge_override is not None
+              else sum(atom.GetFormalCharge() for atom in mol.GetAtoms()))
+    _log(f"  {'Charge (override)' if charge_override is not None else 'Formal charge'}: "
+         f"{charge}  |  Atoms (with H): {mol.GetNumAtoms()}")
 
     _log(f"  Step 1: RDKit ETKDGv3 embedding (5000 → 50)...")
     try:
@@ -624,9 +721,13 @@ def process_compound(cpd: dict, work_base: Path,
         _log(f"  Diazirine detected → constraining N=N (atoms {nn_atoms[0]},{nn_atoms[1]}) "
              f"to {DIAZIRINE_NN} Å [prevents GFN2's spurious ~1.43 Å]")
 
+    if solvent_pairs is None:
+        solvent_pairs = [(SOLVENT_AQ, LABEL_AQ), (SOLVENT_MEM, LABEL_MEM)]
+    polar_label = solvent_pairs[0][1]   # first leg = polar reference (deltas + no cap)
+
     failed_solvents = []
 
-    for solvent, label in [(SOLVENT_AQ, LABEL_AQ), (SOLVENT_MEM, LABEL_MEM)]:
+    for solvent, label in solvent_pairs:
         sol_dir = work_base / label
         sol_dir.mkdir(parents=True, exist_ok=True)
         print(f"\n  ── [{label}] solvent={solvent} ──")
@@ -716,7 +817,7 @@ def process_compound(cpd: dict, work_base: Path,
             failed_solvents.append(label)
             continue
 
-        if solvent == SOLVENT_MEM:
+        if label != polar_label:   # cap apolar legs (was: solvent == SOLVENT_MEM)
             max_post = max_confs if max_confs is not None else 50
             if len(conformers) > max_post:
                 _log(f"  Capping ensemble: {len(conformers)} → {max_post} lowest-energy conformers")
@@ -793,16 +894,20 @@ def process_compound(cpd: dict, work_base: Path,
         _log(f"  WARNING: {short} failed for solvent(s): {', '.join(sorted(set(failed_solvents)))}")
         result["failed_solvents"] = ",".join(sorted(set(failed_solvents)))
 
-    aq_key  = f"{LABEL_AQ}_psa_boltz"
-    mem_key = f"{LABEL_MEM}_psa_boltz"
-    if aq_key in result and mem_key in result:
+    # Deltas between the polar reference (first leg) and the apolar phase (last leg).
+    # Result keys are kept generic ("crest_delta_psa", ..._aq/_mem) so downstream tooling
+    # is unchanged whether the apolar phase is chloroform ("mem") or cyclohexane.
+    apolar_label = solvent_pairs[-1][1]
+    aq_key  = f"{polar_label}_psa_boltz"
+    mem_key = f"{apolar_label}_psa_boltz"
+    if len(solvent_pairs) >= 2 and aq_key in result and mem_key in result:
         result["crest_delta_psa"]      = round(result[aq_key] - result[mem_key], 2)
-        aq_lo  = result.get(f"{LABEL_AQ}_psa_lowen",  np.nan)
-        mem_lo = result.get(f"{LABEL_MEM}_psa_lowen", np.nan)
+        aq_lo  = result.get(f"{polar_label}_psa_lowen",  np.nan)
+        mem_lo = result.get(f"{apolar_label}_psa_lowen", np.nan)
         result["crest_delta_psa_lowen"] = round(aq_lo - mem_lo, 2) if pd.notna(aq_lo) and pd.notna(mem_lo) else np.nan
-        result["crest_delta_hb"]        = round(result[f"{LABEL_MEM}_hb_boltz"] - result[f"{LABEL_AQ}_hb_boltz"], 2)
-        result["crest_psa_spread_aq"]   = result.get(f"{LABEL_AQ}_psa_std",  np.nan)
-        result["crest_psa_spread_mem"]  = result.get(f"{LABEL_MEM}_psa_std", np.nan)
+        result["crest_delta_hb"]        = round(result[f"{apolar_label}_hb_boltz"] - result[f"{polar_label}_hb_boltz"], 2)
+        result["crest_psa_spread_aq"]   = result.get(f"{polar_label}_psa_std",  np.nan)
+        result["crest_psa_spread_mem"]  = result.get(f"{apolar_label}_psa_std", np.nan)
         print(f"\n  ✓ CREST ΔPSA (Boltzmann) = {result['crest_delta_psa']:.1f} Å²  "
               f"(low-energy = {result['crest_delta_psa_lowen']:.1f} Å²  "
               f"ΔHB = {result['crest_delta_hb']:.2f})")

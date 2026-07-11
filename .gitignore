@@ -62,8 +62,8 @@ literature/
 # Generated presentation decks (binary; rebuilt from scripts)
 *.pptx
 
-# Generated report documents (rebuilt from .md via export_docx.py)
-docs/reports/*.docx
+# Reports (deliverables, not source/logs)
+docs/reports/
 
 # Figures / plots / scanned images (not source)
 *.png

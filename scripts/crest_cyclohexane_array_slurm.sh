@@ -46,14 +46,15 @@ echo "Node: $(hostname)   Python: $(which python)"
 
 # One apolar leg written to a cyclohexane/ folder.
 # ALPB has NO cyclohexane parameter set, so xTB/CREST generate the geometries in the
-# closest ALPB hydrocarbon surrogate, hexadecane (ε≈2.05 vs cyclohexane 2.02). The folder
-# is still labelled "cyclohexane" so the downstream CPCM-X step — which DOES have a
-# cyclohexane parameter set — scores this ensemble in real cyclohexane (--cpcmx cyclohexane).
-# LABEL=SOLVENT: label=cyclohexane (folder), solvent=hexadecane (xtb --alpb keyword).
+# closest ALPB hydrocarbon surrogate, hexane (C6, same carbon count as cyclohexane; ε≈1.88
+# vs cyclohexane 2.02). The folder is still labelled "cyclohexane" so the downstream CPCM-X
+# step — which DOES have a cyclohexane parameter set — scores this ensemble in real
+# cyclohexane (--cpcmx cyclohexane).
+# LABEL=SOLVENT: label=cyclohexane (folder), solvent=hexane (xtb --alpb keyword).
 python scripts/crest_v3.2.py \
     --compound "$IDX" \
     --threads 20 \
     --outdir results \
-    --solvents cyclohexane=hexadecane
+    --solvents cyclohexane=hexane
 
 echo "===== Done array task=$SLURM_ARRAY_TASK_ID compound=$IDX | $(date) ====="

@@ -58,3 +58,23 @@ literature/
 
 # Windows Office lock files
 ~$*
+
+# Generated presentation decks (binary; rebuilt from scripts)
+*.pptx
+
+# Generated report documents (rebuilt from .md via export_docx.py)
+docs/reports/*.docx
+
+# Figures / plots / scanned images (not source)
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.gif
+
+# Computation outputs / reference structures under data/ (regenerable or large)
+data/**/*.xyz
+data/**/*.out
+data/**/*.cif
+data/**/*.dwar
+data/**/ensemble.json

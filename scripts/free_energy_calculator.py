@@ -32,11 +32,13 @@ Runs on the HPC (xTB is Linux-only). Pure stdlib — no rdkit/pandas.
 
 Examples
 --------
-  # phase-specific CPCM-X scoring: water + cyclohexane, each its own native ensemble
+  # phase-specific CPCM-X scoring: water + cyclohexane, each its own native ensemble.
+  # --ewin 8 pre-trims each ensemble to conformers within 8 kcal/mol of its lowest
+  # CREST energy before scoring (throughput; negligible weight beyond that).
   python free_energy_calculator.py \
       --leg water=path/to/DOPC_3-12-8-12_S/water/ensemble.xyz \
       --leg cyclohexane=path/to/DOPC_3-12-8-12_S/cyclohexane/ensemble.xyz \
-      --ref water --out fe_812S.csv
+      --ref water --ewin 8 --out fe_812S.csv
 
   # same run with ALPB, for the one-time comparison table
   python free_energy_calculator.py --method alpb \
@@ -166,44 +168,89 @@ def boltzmann_pops(energies_kcal, T=DEFAULT_T):
     return [x / s for x in w] if s else [0.0] * len(w)
 
 
-def score_leg(solvent, xyz_path, method, charge, xtb_bin, gfn, uhf, add_gsolv, jobs):
-    """Score every conformer of one phase-specific ensemble. Returns (rows, G_ens_kcal)."""
+def _frame_energy_hartree(comment):
+    """First float token in an ensemble.xyz comment line = the conformer's energy in
+    Hartree, as written by CREST. Returns None if the comment has no parseable number."""
+    for tok in comment.replace("=", " ").replace(":", " ").split():
+        try:
+            return float(tok)
+        except ValueError:
+            continue
+    return None
+
+
+def apply_energy_window(frames, ewin_kcal):
+    """Keep only frames whose CREST (GFN2) comment energy is within `ewin_kcal` of the
+    lowest, as a cheap pre-filter before the expensive CPCM-X single-points. Conformers
+    beyond a few kcal/mol carry negligible Boltzmann weight, so this trims cost with ~no
+    accuracy loss. Comment energies are in Hartree; the window is converted to match.
+
+    The ranking here is the CREST/ALPB energy, which can differ slightly from the CPCM-X
+    ranking used for the final weights — so keep the window GENEROUS (e.g. 8 kcal/mol) to
+    avoid dropping a conformer that CPCM-X would rank low. Frames with no parseable energy
+    are kept (they can't be judged)."""
+    ewin_eh = ewin_kcal / HARTREE_TO_KCAL
+    es = [_frame_energy_hartree(c) for (_i, c, _b) in frames]
+    valid = [e for e in es if e is not None]
+    if not valid:
+        return frames                       # no energies to filter on — score all
+    emin = min(valid)
+    return [fr for fr, e in zip(frames, es) if e is None or (e - emin) <= ewin_eh]
+
+
+def score_leg(solvent, xyz_path, method, charge, xtb_bin, gfn, uhf, add_gsolv, jobs,
+              ewin=None):
+    """Score every conformer of one phase-specific ensemble. Returns (rows, G_ens_kcal).
+
+    If `ewin` (kcal/mol) is given, conformers outside that window of the lowest CREST
+    energy are dropped BEFORE the CPCM-X single-points (throughput). The "conf" field in
+    each row keeps the original conformer index from the ensemble for traceability."""
     frames = parse_xyz_ensemble(xyz_path)
     if not frames:
         print(f"  !! no frames in {xyz_path}", file=sys.stderr)
         return [], None
+    n_total = len(frames)
+    if ewin is not None:
+        frames = apply_energy_window(frames, ewin)
+        print(f"  [{solvent}] energy window {ewin:g} kcal/mol (GFN2 pre-score): "
+              f"kept {len(frames)}/{n_total} conformers", file=sys.stderr)
+        if not frames:
+            print(f"  !! all frames dropped by energy window in {xyz_path}", file=sys.stderr)
+            return [], None
     print(f"  [{solvent}] {xyz_path}: {len(frames)} conformers x {method}",
           file=sys.stderr)
 
-    energies = [None] * len(frames)
-    gsolvs = [None] * len(frames)
+    n = len(frames)
+    energies = [None] * n
+    gsolvs = [None] * n
 
-    def _work(item):
-        idx, _c, block = item
+    def _work(pos_item):
+        pos, (_idx, _c, block) = pos_item
         e, g, st = xtb_score(block, solvent, method, charge, xtb_bin, gfn, uhf, add_gsolv)
-        return idx, e, g, st
+        return pos, e, g, st
 
     done = fail = 0
     with ThreadPoolExecutor(max_workers=jobs) as ex:
-        for fut in as_completed(ex.submit(_work, f) for f in frames):
-            idx, e, g, st = fut.result()
-            energies[idx], gsolvs[idx] = e, g
+        for fut in as_completed(ex.submit(_work, item) for item in enumerate(frames)):
+            pos, e, g, st = fut.result()
+            energies[pos], gsolvs[pos] = e, g
             done += 1
             fail += (e is None)
-            if done % 50 == 0 or done == len(frames):
-                print(f"    {done}/{len(frames)} ({fail} failed)", file=sys.stderr)
+            if done % 50 == 0 or done == n:
+                print(f"    {done}/{n} ({fail} failed)", file=sys.stderr)
 
     kcal = [None if e is None else e * HARTREE_TO_KCAL for e in energies]
     pops = boltzmann_pops(kcal)
-    emin = min(x for x in kcal if x is not None)
+    valid = [x for x in kcal if x is not None]
+    emin = min(valid) if valid else None
     rows = []
-    for (idx, comment, _b) in frames:
+    for pos, (orig_idx, _comment, _b) in enumerate(frames):
         rows.append({
-            "solvent": solvent, "conf": idx, "method": method,
-            "E_Eh": energies[idx],
-            "Gsolv_Eh": gsolvs[idx],
-            "relE_kcal": None if kcal[idx] is None else kcal[idx] - emin,
-            "pop": pops[idx],
+            "solvent": solvent, "conf": orig_idx, "method": method,
+            "E_Eh": energies[pos],
+            "Gsolv_Eh": gsolvs[pos],
+            "relE_kcal": None if (kcal[pos] is None or emin is None) else kcal[pos] - emin,
+            "pop": pops[pos],
         })
     return rows, ensemble_free_energy(kcal)
 
@@ -229,6 +276,11 @@ def main(argv=None):
                          "reports the GAS total under --cpcmx; verify first)")
     ap.add_argument("--xtb", default="xtb")
     ap.add_argument("--jobs", type=int, default=1, help="parallel xtb workers")
+    ap.add_argument("--ewin", type=float, default=None, metavar="KCAL",
+                    help="pre-filter conformers to within KCAL kcal/mol of the lowest "
+                         "CREST (GFN2) energy before CPCM-X scoring — large throughput "
+                         "win with negligible accuracy loss (recommended start: 8). "
+                         "Default: score all conformers.")
     ap.add_argument("--out", type=Path, default=Path("free_energy.csv"),
                     help="per-conformer CSV (summary -> <out>.summary.csv)")
     args = ap.parse_args(argv)
@@ -251,7 +303,8 @@ def main(argv=None):
     for method in methods:
         for solv, xp in legs.items():
             rows, g_ens = score_leg(solv, xp, method, args.charge, args.xtb,
-                                    args.gfn, args.uhf, args.cpcmx_add_gsolv, args.jobs)
+                                    args.gfn, args.uhf, args.cpcmx_add_gsolv, args.jobs,
+                                    ewin=args.ewin)
             all_rows.extend(rows)
             G[(method, solv)] = g_ens
 

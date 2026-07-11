@@ -363,22 +363,26 @@ def run(outdir: Path, max_confs: int | None,
 
 
 def parse_solvents(spec: str) -> list[tuple[str, str]]:
-    """Parse --solvents "LABEL=SOLVENT,LABEL=SOLVENT" into [(solvent, label), ...].
+    """Parse a --solvents string into [(solvent, label), ...].
 
-    The first pair is the polar reference used for the ΔPSA/ΔHB deltas. LABEL names the
-    output sub-directory (water/, chloroform/, hexane/ ...); SOLVENT is the xtb --alpb keyword.
-    Example: "water=water,hexane=hexane".
+    Each comma-separated entry is either a bare solvent name or LABEL=SOLVENT:
+        "hexane"             -> folder hexane/,       xtb --alpb hexane   (label = solvent)
+        "chloroform=chcl3"   -> folder chloroform/,   xtb --alpb chcl3    (decoupled)
+    LABEL names the output sub-directory; SOLVENT is the xtb/CREST --alpb keyword. Use the
+    bare form unless you want the folder label to differ from the solvent keyword.
+    Example: "water,chloroform=chcl3,hexane".
     """
     pairs: list[tuple[str, str]] = []
     for tok in spec.split(","):
         tok = tok.strip()
         if not tok:
             continue
-        if "=" not in tok:
-            raise ValueError(f"--solvents entry {tok!r} must be LABEL=SOLVENT")
-        label, solvent = (x.strip() for x in tok.split("=", 1))
+        if "=" in tok:
+            label, solvent = (x.strip() for x in tok.split("=", 1))
+        else:
+            label = solvent = tok          # bare name: folder label = solvent keyword
         if not label or not solvent:
-            raise ValueError(f"--solvents entry {tok!r} must be LABEL=SOLVENT")
+            raise ValueError(f"--solvents entry {tok!r} must be SOLVENT or LABEL=SOLVENT")
         pairs.append((solvent, label))
     if not pairs:
         raise ValueError("--solvents produced no legs")
@@ -398,10 +402,11 @@ def parse_args() -> argparse.Namespace:
                         help="Cap conformers kept per solvent (lowest-energy). Default: keep all.")
     parser.add_argument("--resume",    action="store_true",
                         help="Resume a previous incomplete run instead of starting fresh.")
-    parser.add_argument("--solvents",  type=str, default=None, metavar="LABEL=SOLVENT,...",
-                        help="Override the solvent legs (default: water=water,chloroform=chcl3,"
-                             "hexane=hexane). Comma-separated LABEL=SOLVENT pairs; "
-                             "LABEL is the output folder, SOLVENT the xtb/CREST --alpb keyword.")
+    parser.add_argument("--solvents",  type=str, default=None, metavar="SOLVENT[,...]",
+                        help="Override the solvent legs (default: water,chloroform=chcl3,hexane). "
+                             "Comma-separated; each is a bare solvent name (folder = solvent) or "
+                             "LABEL=SOLVENT to name the folder differently. SOLVENT is the "
+                             "xtb/CREST --alpb keyword.")
     return parser.parse_args()
 
 

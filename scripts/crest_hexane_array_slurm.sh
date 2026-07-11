@@ -50,6 +50,6 @@ python scripts/crest_v3.2.py \
     --compound "$IDX" \
     --threads 20 \
     --outdir results \
-    --solvents hexane=hexane
+    --solvents hexane
 
 echo "===== Done array task=$SLURM_ARRAY_TASK_ID compound=$IDX | $(date) ====="

@@ -24,25 +24,26 @@ METHOD (scoring solvation model, single-point only):
 Geometry is NOT re-optimized: CREST already relaxed each phase in ALPB, so we score on
 those phase-specific geometries. (CPCM-X cannot optimize anyway — no gradient.)
 
-Apolar phase of record is CYCLOHEXANE (Ono 2019: cyclohexane SASA >> chloroform for
-permeability). If your xTB build lacks a cyclohexane keyword, use the closest supported
-saturated-hydrocarbon surrogate (hexane ε≈1.88 / hexadecane ε≈2.06) and say so.
+Apolar phase of record is HEXANE (n-hexane) — a saturated hydrocarbon directly parameterized
+in both ALPB (CREST generation) and CPCM-X (scoring), so no surrogate/relabeling is needed.
+(Ono 2019 used cyclohexane for the SASA-vs-permeability rationale; hexane is the close
+n-alkane analog we standardized on for consistent ALPB/CPCM-X support.)
 
 Runs on the HPC (xTB is Linux-only). Pure stdlib — no rdkit/pandas.
 
 Examples
 --------
-  # phase-specific CPCM-X scoring: water + cyclohexane, each its own native ensemble.
+  # phase-specific CPCM-X scoring: water + hexane, each its own native ensemble.
   # --ewin 8 pre-trims each ensemble to conformers within 8 kcal/mol of its lowest
   # CREST energy before scoring (throughput; negligible weight beyond that).
   python free_energy_calculator.py \
       --leg water=path/to/DOPC_3-12-8-12_S/water/ensemble.xyz \
-      --leg cyclohexane=path/to/DOPC_3-12-8-12_S/cyclohexane/ensemble.xyz \
+      --leg hexane=path/to/DOPC_3-12-8-12_S/hexane/ensemble.xyz \
       --ref water --ewin 8 --out fe_812S.csv
 
   # same run with ALPB, for the one-time comparison table
   python free_energy_calculator.py --method alpb \
-      --leg water=.../water/ensemble.xyz --leg cyclohexane=.../cyclohexane/ensemble.xyz \
+      --leg water=.../water/ensemble.xyz --leg hexane=.../hexane/ensemble.xyz \
       --ref water --out fe_812S_alpb.csv
 """
 from __future__ import annotations
@@ -261,7 +262,7 @@ def main(argv=None):
     ap.add_argument("--leg", action="append", required=True, metavar="SOLVENT=PATH",
                     help="a phase: ALPB/CPCM-X solvent keyword = path to that phase's "
                          "native ensemble.xyz. Repeat for each phase (e.g. water, "
-                         "cyclohexane).")
+                         "hexane).")
     ap.add_argument("--ref", default="water",
                     help="reference solvent for ΔG_transfer (default water)")
     ap.add_argument("--method", choices=["cpcmx", "alpb"], default="cpcmx")

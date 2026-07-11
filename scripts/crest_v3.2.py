@@ -366,8 +366,8 @@ def parse_solvents(spec: str) -> list[tuple[str, str]]:
     """Parse --solvents "LABEL=SOLVENT,LABEL=SOLVENT" into [(solvent, label), ...].
 
     The first pair is the polar reference used for the ΔPSA/ΔHB deltas. LABEL names the
-    output sub-directory (water/, chloroform/, cyclohexane/ ...); SOLVENT is the xtb --alpb keyword.
-    Example: "water=water,cyclohexane=cyclohexane".
+    output sub-directory (water/, chloroform/, hexane/ ...); SOLVENT is the xtb --alpb keyword.
+    Example: "water=water,hexane=hexane".
     """
     pairs: list[tuple[str, str]] = []
     for tok in spec.split(","):
@@ -400,7 +400,7 @@ def parse_args() -> argparse.Namespace:
                         help="Resume a previous incomplete run instead of starting fresh.")
     parser.add_argument("--solvents",  type=str, default=None, metavar="LABEL=SOLVENT,...",
                         help="Override the solvent legs (default: water=water,chloroform=chcl3,"
-                             "cyclohexane=hexane). Comma-separated LABEL=SOLVENT pairs; "
+                             "hexane=hexane). Comma-separated LABEL=SOLVENT pairs; "
                              "LABEL is the output folder, SOLVENT the xtb/CREST --alpb keyword.")
     return parser.parse_args()
 

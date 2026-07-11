@@ -44,8 +44,7 @@ warnings.filterwarnings("ignore")
 SOLVENT_PAIRS_DEFAULT: list[tuple[str, str]] = [
     ("water",   "water"),        # folder: water
     ("chcl3",   "chloroform"),   # folder: chloroform, solvent keyword: chcl3
-    ("hexane",  "cyclohexane"),  # folder: cyclohexane; ALPB has no cyclohexane, so generate
-                                 # in hexane (C6 surrogate) — CPCM-X scores real cyclohexane downstream
+    ("hexane",  "hexane"),       # folder: hexane, solvent keyword: hexane
 ]
 
 SOURCE_TAG = "CREST GFN2-xTB ALPB"
@@ -699,7 +698,7 @@ def process_molecule(smiles: str, name: str, work_base: Path,
     solvent legs.
 
     solvent_pairs : list of (xtb/CREST solvent, output-directory label). Defaults to
-        SOLVENT_PAIRS_DEFAULT (water/chloroform/cyclohexane). The label names the
+        SOLVENT_PAIRS_DEFAULT (water/chloroform/hexane). The label names the
         sub-folder; the solvent string is the xtb/CREST --alpb keyword.
     charge : formal-charge override; default = sum of RDKit formal charges.
     use_diazirine_constraint : auto-detect a diazirine and pin its N=N distance
@@ -856,7 +855,7 @@ def generate_conformers(smiles: str, name: str = "molecule",
 
 # ── Resume logic ──────────────────────────────────────────────────────────────
 def find_resume_dir(runs_base: Path, compound_idx: int, short: str,
-                    labels: tuple[str, ...] = ("water", "chloroform", "cyclohexane")) -> Path | None:
+                    labels: tuple[str, ...] = ("water", "chloroform", "hexane")) -> Path | None:
     """Return the most recent incomplete run dir (has CREST checkpoint data but no
     final manifest)."""
     if not runs_base.exists():

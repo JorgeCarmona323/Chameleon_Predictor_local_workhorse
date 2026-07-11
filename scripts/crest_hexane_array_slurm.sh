@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=crest_cyclohexane
+#SBATCH --job-name=crest_hexane
 #SBATCH --output=results/slurm_logs/%x_%A_%a.out
 #SBATCH --error=results/slurm_logs/%x_%A_%a.err
 #SBATCH --ntasks=1
@@ -41,20 +41,15 @@ COMPOUNDS=(
 
 IDX="${COMPOUNDS[$SLURM_ARRAY_TASK_ID]}"
 
-echo "===== CREST cyclohexane | array task=$SLURM_ARRAY_TASK_ID compound=$IDX | $(date) ====="
+echo "===== CREST hexane | array task=$SLURM_ARRAY_TASK_ID compound=$IDX | $(date) ====="
 echo "Node: $(hostname)   Python: $(which python)"
 
-# One apolar leg written to a cyclohexane/ folder.
-# ALPB has NO cyclohexane parameter set, so xTB/CREST generate the geometries in the
-# closest ALPB hydrocarbon surrogate, hexane (C6, same carbon count as cyclohexane; ε≈1.88
-# vs cyclohexane 2.02). The folder is still labelled "cyclohexane" so the downstream CPCM-X
-# step — which DOES have a cyclohexane parameter set — scores this ensemble in real
-# cyclohexane (--cpcmx cyclohexane).
-# LABEL=SOLVENT: label=cyclohexane (folder), solvent=hexane (xtb --alpb keyword).
+# One apolar leg: n-hexane. Generated in ALPB hexane here and later scored in CPCM-X hexane
+# — both models have a hexane parameter set, so no surrogate or relabeling is needed.
 python scripts/crest_v3.2.py \
     --compound "$IDX" \
     --threads 20 \
     --outdir results \
-    --solvents cyclohexane=hexane
+    --solvents hexane=hexane
 
 echo "===== Done array task=$SLURM_ARRAY_TASK_ID compound=$IDX | $(date) ====="

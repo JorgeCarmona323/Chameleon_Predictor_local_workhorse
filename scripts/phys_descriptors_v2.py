@@ -4,7 +4,7 @@
 ------------------------
 3D physics-based descriptors for cyclic peptide conformer ensembles.
 Operates on raw XYZ coordinate arrays (symbol lists + numpy coords) from
-CREST/xTB ensembles. Designed to work alongside crest_conformers.py.
+CREST/xTB ensembles. Designed to work alongside crest_engine.py.
 
 Functions:
   boltzmann_weights   — compute Boltzmann weights from GFN2 energies (Hartree)

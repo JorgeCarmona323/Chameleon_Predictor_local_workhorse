@@ -3,14 +3,14 @@
 crest_v3.2.py
 -------------
 Entry point for the CREST iMTD-GC conformer sampling pipeline.
-Defines reference compounds and dispatches to crest_conformers.py.
+Defines reference compounds and dispatches to crest_engine.py.
 
 Usage:
   python crest_v3.2.py --compound 1 --threads 20 --outdir results
   python crest_v3.2.py --compound 4 --threads 20 --outdir results --resume
 
 Compound index:
-  0 = HexPep   (impermeable,  6-mer)
+  0 = HexPep   (imperm. by -6.0 threshold; = Rezai 2006 compound 1, logP_E -6.2, their most-permeable diastereomer)
   1 = CsA      (permeable,   11-mer)
   2 = CsO      (permeable,   11-mer)
   3 = PSLYF    (impermeable, 11-mer)
@@ -50,7 +50,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import pandas as pd
 
-from crest_conformers import process_compound, find_resume_dir
+from crest_engine import process_compound, find_resume_dir
 
 # ── Reference compounds ───────────────────────────────────────────────────────
 REFERENCE_COMPOUNDS = [
@@ -64,6 +64,8 @@ REFERENCE_COMPOUNDS = [
         ),
         "source": "Rezai & Lokey, JACS 2006",
         "pampa": -6.20,
+        # = Rezai compound 1 (their MOST-permeable diastereomer, SMILES-confirmed 2026-07-08);
+        # False because -6.20 is below the project's -6.0 PAMPA threshold. Both are true.
         "permeable": False,
         "hbd": 6,
     },
@@ -241,7 +243,7 @@ REFERENCE_COMPOUNDS = [
     },
     # ── N=N-constrained reruns (v2) of the diazirine compounds 12-15 ──────────────
     # GFN2/CREST stretched the diazirine N=N to ~1.43 A in the originals; these reruns
-    # apply the auto N=N distance constraint (crest_conformers.py). Same SMILES, new index,
+    # apply the auto N=N distance constraint (crest_engine.py). Same SMILES, new index,
     # fresh run dir — no need to touch the original 12-15 runs. (Mirrors the CsA_v2 pattern.)
     {
         "name": "DOPC_3-12-8-12_R_diazirine_v2",
@@ -277,7 +279,7 @@ REFERENCE_COMPOUNDS = [
     },
     # ── New 6-mer hits (2026-06-23 batch): clearer {code}_{linker} naming ──────────
     # SMILES from data/new_6mer_compounds_added_diazirine_20260623.csv (canonicalized).
-    # Diazirine entries auto-get the N=N distance constraint via crest_conformers.py.
+    # Diazirine entries auto-get the N=N distance constraint via crest_engine.py.
     {
         "name": "DOPC_1-6-4-7_xylene",
         "short": "1-6-4-7_xylene",
@@ -323,7 +325,8 @@ REFERENCE_COMPOUNDS = [
 
 def run(outdir: Path, max_confs: int | None, dry_run: bool,
         compound_idx: int | None = None, n_threads: int | None = None,
-        resume: bool = False) -> None:
+        resume: bool = False,
+        solvent_pairs: list[tuple[str, str]] | None = None) -> None:
 
     n_threads = n_threads or os.cpu_count() or 1
 
@@ -348,11 +351,35 @@ def run(outdir: Path, max_confs: int | None, dry_run: bool,
         print(f"\n[Compound {compound_idx}] {cpd['name']}")
         print(f"Run directory: {work_base}")
 
-    r = process_compound(cpd, work_base, max_confs, dry_run, n_threads)
+    r = process_compound(cpd, work_base, max_confs, dry_run, n_threads,
+                         solvent_pairs=solvent_pairs)
 
     out_csv = work_base / f"{short}_results.csv"
     pd.DataFrame([r]).to_csv(out_csv, index=False)
     print(f"\nSaved: {out_csv}")
+
+
+def parse_solvents(spec: str) -> list[tuple[str, str]]:
+    """Parse --solvents "LABEL=SOLVENT,LABEL=SOLVENT" into [(solvent, label), ...].
+
+    The first pair is the polar reference used for the ΔPSA/ΔHB deltas. LABEL names the
+    output sub-directory (water/, mem/, cyclohexane/ ...); SOLVENT is the xtb --alpb keyword.
+    Example: "water=water,cyclohexane=cyclohexane".
+    """
+    pairs: list[tuple[str, str]] = []
+    for tok in spec.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if "=" not in tok:
+            raise ValueError(f"--solvents entry {tok!r} must be LABEL=SOLVENT")
+        label, solvent = (x.strip() for x in tok.split("=", 1))
+        if not label or not solvent:
+            raise ValueError(f"--solvents entry {tok!r} must be LABEL=SOLVENT")
+        pairs.append((solvent, label))
+    if not pairs:
+        raise ValueError("--solvents produced no legs")
+    return pairs
 
 
 def parse_args() -> argparse.Namespace:
@@ -369,6 +396,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run",   action="store_true")
     parser.add_argument("--resume",    action="store_true",
                         help="Resume a previous incomplete run instead of starting fresh.")
+    parser.add_argument("--solvents",  type=str, default=None, metavar="LABEL=SOLVENT,...",
+                        help="Override the solvent legs (default: water=water,mem=chcl3). "
+                             "Comma-separated LABEL=SOLVENT pairs; the first is the polar "
+                             "reference for ΔPSA. Example: water=water,cyclohexane=cyclohexane")
     return parser.parse_args()
 
 
@@ -376,9 +407,10 @@ if __name__ == "__main__":
     args = parse_args()
     run(
         Path(args.outdir),
-        max_confs    = args.max_confs,
-        dry_run      = args.dry_run,
-        compound_idx = args.compound,
-        n_threads    = args.threads,
-        resume       = args.resume,
+        max_confs     = args.max_confs,
+        dry_run       = args.dry_run,
+        compound_idx  = args.compound,
+        n_threads     = args.threads,
+        resume        = args.resume,
+        solvent_pairs = parse_solvents(args.solvents) if args.solvents else None,
     )

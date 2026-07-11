@@ -27,7 +27,7 @@ env therefore needs *no* rdkit, and the two never fight over numpy pins.
 ## Which env runs which script
 
 **chameleon-sim** (CREST / xtb — cluster):
-`crest_conformers.py`, `crest_v3.*.py`, `submit_tier2_slurm*.py`
+`crest_engine.py`, `crest_v3.*.py`, `submit_tier2_slurm*.py`
 
 **chameleon-calc** (rdkit descriptors / figures — local + cluster):
 `phys_descriptors_v2.py`, `phys_descriptors_v3.py`, `ensemble_descriptors.py`,

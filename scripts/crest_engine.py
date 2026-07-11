@@ -1,7 +1,7 @@
 # env: chameleon-sim
 """
-crest_conformers.py
--------------------
+crest_engine.py
+---------------
 CREST iMTD-GC conformer sampling pipeline.
 Handles all simulation steps (RDKit embedding, xTB pre-opt, CREST, post-processing)
 and ensemble I/O (XYZ parsing, SDF/JSON export).

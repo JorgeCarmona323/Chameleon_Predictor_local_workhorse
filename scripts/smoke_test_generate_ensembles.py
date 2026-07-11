@@ -3,7 +3,7 @@
 smoke_test_generate_ensembles.py
 --------------------------------
 Fast validation of the registry-free direct-SMILES front end added to
-`crest_conformers.py` (generate_ensembles / check_binaries / _safe_short).
+`crest_engine.py` (generate_ensembles / check_binaries / _safe_short).
 
 These checks do NOT run CREST/xTB — they exercise the input-validation and
 plumbing layers only, so they pass on any machine with RDKit (no external
@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from crest_conformers import generate_ensembles, check_binaries, _safe_short
+from crest_engine import generate_ensembles, check_binaries, _safe_short
 
 SIMPLE = "CCO"  # ethanol
 # macrocycle-like: a real DOPC hit (thioether xylene macrocycle)

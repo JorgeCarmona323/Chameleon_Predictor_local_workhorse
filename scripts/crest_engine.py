@@ -42,9 +42,10 @@ warnings.filterwarnings("ignore")
 # Solvent legs are (xtb/CREST solvent keyword, output-directory label).
 # The label names the sub-folder; the solvent string is the xtb/CREST --alpb keyword.
 SOLVENT_PAIRS_DEFAULT: list[tuple[str, str]] = [
-    ("water",       "water"),        # folder: water
-    ("chcl3",       "chloroform"),   # folder: chloroform, solvent keyword: chcl3
-    ("cyclohexane", "cyclohexane"),  # folder: cyclohexane
+    ("water",   "water"),        # folder: water
+    ("chcl3",   "chloroform"),   # folder: chloroform, solvent keyword: chcl3
+    ("hexane",  "cyclohexane"),  # folder: cyclohexane; ALPB has no cyclohexane, so generate
+                                 # in hexane (C6 surrogate) — CPCM-X scores real cyclohexane downstream
 ]
 
 SOURCE_TAG = "CREST GFN2-xTB ALPB"

@@ -400,7 +400,7 @@ def parse_args() -> argparse.Namespace:
                         help="Resume a previous incomplete run instead of starting fresh.")
     parser.add_argument("--solvents",  type=str, default=None, metavar="LABEL=SOLVENT,...",
                         help="Override the solvent legs (default: water=water,chloroform=chcl3,"
-                             "cyclohexane=cyclohexane). Comma-separated LABEL=SOLVENT pairs; "
+                             "cyclohexane=hexane). Comma-separated LABEL=SOLVENT pairs; "
                              "LABEL is the output folder, SOLVENT the xtb/CREST --alpb keyword.")
     return parser.parse_args()
 

@@ -48,9 +48,9 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
-import pandas as pd
+import json
 
-from crest_engine import process_compound, find_resume_dir
+from crest_engine import process_molecule, find_resume_dir
 
 # ── Reference compounds ───────────────────────────────────────────────────────
 REFERENCE_COMPOUNDS = [
@@ -323,7 +323,7 @@ REFERENCE_COMPOUNDS = [
 ]
 
 
-def run(outdir: Path, max_confs: int | None, dry_run: bool,
+def run(outdir: Path, max_confs: int | None,
         compound_idx: int | None = None, n_threads: int | None = None,
         resume: bool = False,
         solvent_pairs: list[tuple[str, str]] | None = None) -> None:
@@ -351,19 +351,21 @@ def run(outdir: Path, max_confs: int | None, dry_run: bool,
         print(f"\n[Compound {compound_idx}] {cpd['name']}")
         print(f"Run directory: {work_base}")
 
-    r = process_compound(cpd, work_base, max_confs, dry_run, n_threads,
-                         solvent_pairs=solvent_pairs)
+    r = process_molecule(smiles=cpd["smiles"], name=cpd["name"], work_base=work_base,
+                         solvent_pairs=solvent_pairs, charge=None,
+                         n_threads=n_threads, max_confs=max_confs)
 
-    out_csv = work_base / f"{short}_results.csv"
-    pd.DataFrame([r]).to_csv(out_csv, index=False)
-    print(f"\nSaved: {out_csv}")
+    manifest = work_base / f"{short}_manifest.json"
+    with open(manifest, "w") as f:
+        json.dump(r, f, indent=2, default=str)
+    print(f"\nSaved: {manifest}")
 
 
 def parse_solvents(spec: str) -> list[tuple[str, str]]:
     """Parse --solvents "LABEL=SOLVENT,LABEL=SOLVENT" into [(solvent, label), ...].
 
     The first pair is the polar reference used for the ΔPSA/ΔHB deltas. LABEL names the
-    output sub-directory (water/, mem/, cyclohexane/ ...); SOLVENT is the xtb --alpb keyword.
+    output sub-directory (water/, chloroform/, cyclohexane/ ...); SOLVENT is the xtb --alpb keyword.
     Example: "water=water,cyclohexane=cyclohexane".
     """
     pairs: list[tuple[str, str]] = []
@@ -384,7 +386,7 @@ def parse_solvents(spec: str) -> list[tuple[str, str]]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Tier-2 CREST+ALPB validation (v3.2 — CREMP-format outputs)",
+        description="CREST+ALPB conformer generation over the reference compound set (v3.2)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -392,14 +394,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--compound",  type=int, default=None, metavar="IDX")
     parser.add_argument("--threads",   type=int, default=None, metavar="N")
     parser.add_argument("--max-confs", "-c", type=int, default=None,
-                        help="Cap conformers used for PSA analysis. Default: 50.")
-    parser.add_argument("--dry-run",   action="store_true")
+                        help="Cap conformers kept per solvent (lowest-energy). Default: keep all.")
     parser.add_argument("--resume",    action="store_true",
                         help="Resume a previous incomplete run instead of starting fresh.")
     parser.add_argument("--solvents",  type=str, default=None, metavar="LABEL=SOLVENT,...",
-                        help="Override the solvent legs (default: water=water,mem=chcl3). "
-                             "Comma-separated LABEL=SOLVENT pairs; the first is the polar "
-                             "reference for ΔPSA. Example: water=water,cyclohexane=cyclohexane")
+                        help="Override the solvent legs (default: water=water,chloroform=chcl3,"
+                             "cyclohexane=cyclohexane). Comma-separated LABEL=SOLVENT pairs; "
+                             "LABEL is the output folder, SOLVENT the xtb/CREST --alpb keyword.")
     return parser.parse_args()
 
 
@@ -408,7 +409,6 @@ if __name__ == "__main__":
     run(
         Path(args.outdir),
         max_confs     = args.max_confs,
-        dry_run       = args.dry_run,
         compound_idx  = args.compound,
         n_threads     = args.threads,
         resume        = args.resume,

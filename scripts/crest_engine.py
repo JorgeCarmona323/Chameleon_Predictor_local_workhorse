@@ -2,11 +2,20 @@
 """
 crest_engine.py
 ---------------
-CREST iMTD-GC conformer sampling pipeline.
-Handles all simulation steps (RDKit embedding, xTB pre-opt, CREST, post-processing)
-and ensemble I/O (XYZ parsing, SDF/JSON export).
+Conformer-generation engine.  SMILES → RDKit ETKDG embedding → xTB pre-opt →
+CREST iMTD-GC sampling, exported as XYZ + SDF per solvent.
 
-Imported by crest_v3.2.py — not run directly.
+This is a *pure conformer generator*: no descriptors, no PSA/H-bond/Boltzmann
+averaging, no ΔPSA/ΔHB, no permeability/PAMPA metadata, no dry-run mockups.
+Descriptor calculation lives downstream (see notebooks/pipeline).
+
+Public API
+    generate_conformers(smiles, ...)                 registry-free front end
+    process_molecule(smiles, name, work_base, ...)   one molecule, N solvent legs
+    check_binaries(), _safe_short()                  helpers
+    find_resume_dir(...)                             resume a prior incomplete run
+
+Imported by crest_v3.2.py (reference-compound registry + CLI).
 """
 
 from __future__ import annotations
@@ -23,24 +32,47 @@ from datetime import datetime
 from pathlib import Path
 
 import sys
-from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 import numpy as np
-import pandas as pd
-
-from phys_descriptors_v2 import boltzmann_weights, compute_psa_xyz, count_hbonds_xyz
 
 warnings.filterwarnings("ignore")
 
-SOLVENT_AQ  = "water"
-SOLVENT_MEM = "chcl3"
-LABEL_AQ    = "water"
-LABEL_MEM   = "mem"
+# Solvent legs are (xtb/CREST solvent keyword, output-directory label).
+# The label names the sub-folder; the solvent string is the xtb/CREST --alpb keyword.
+SOLVENT_PAIRS_DEFAULT: list[tuple[str, str]] = [
+    ("water",       "water"),        # folder: water
+    ("chcl3",       "chloroform"),   # folder: chloroform, solvent keyword: chcl3
+    ("cyclohexane", "cyclohexane"),  # folder: cyclohexane
+]
+
+SOURCE_TAG = "CREST GFN2-xTB ALPB"
 
 
 def _log(msg: str) -> None:
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
+
+
+# ── binary / filename helpers ─────────────────────────────────────────────────
+def check_binaries(require=("xtb", "crest")) -> dict:
+    """Return {binary: resolved_path}. Raise RuntimeError if any required binary is
+    not on PATH, with actionable install guidance. CREST/xTB are external programs;
+    the conformer search cannot run without them."""
+    found = {b: shutil.which(b) for b in require}
+    missing = [b for b, p in found.items() if p is None]
+    if missing:
+        raise RuntimeError(
+            f"Required external binary/binaries not found on PATH: {', '.join(missing)}. "
+            f"The CREST/xTB conformer search cannot run without them. Install with "
+            f"`conda install -c conda-forge xtb crest` (or load your cluster's modules), "
+            f"then restart the kernel/shell so PATH is refreshed.")
+    return found
+
+
+def _safe_short(name: str) -> str:
+    """Filesystem-safe short label derived from a molecule name (used in filenames)."""
+    s = re.sub(r"[^0-9A-Za-z._-]+", "_", (name or "").strip()).strip("_")
+    return (s or "molecule")[:40]
 
 
 # ── RDKit conformer embedding ─────────────────────────────────────────────────
@@ -139,10 +171,11 @@ def _write_conformer_xyz(mol, conf_id: int, xyz_path: Path,
     xyz_path.write_text("\n".join(lines) + "\n")
 
 
-# ── diazirine N=N constraint (GFN2 stretches it to a spurious ~1.43 Å; see ──────
-#    docs/experiments + memory diazirine-review-checklist). True N=N = 1.228 Å (exp,
+# ── diazirine N=N constraint (optional; GFN2 stretches it to a spurious ~1.43 Å; ─
+#    see docs/experiments + memory diazirine-review-checklist). True N=N = 1.228 Å (exp,
 #    microwave) / 1.230 Å (CCSD(T)). Constrain it so the macrocycle samples freely
-#    while the rigid diazirine can't drift into GFN2's single-bond basin.
+#    while the rigid diazirine can't drift into GFN2's single-bond basin. Auto-detected
+#    per molecule and gated by `use_diazirine_constraint`; a no-op when absent.
 DIAZIRINE_SMARTS = "[#6]1[#7]=[#7]1"
 DIAZIRINE_NN = 1.23   # Å; constrain target (literature 1.228–1.230)
 
@@ -375,84 +408,6 @@ def run_crest_cregen(xyz_path: Path, work_dir: Path, solvent: str,
     return None
 
 
-# ── Parse crest.out ───────────────────────────────────────────────────────────
-def parse_crest_log(crest_out_path: Path) -> dict | None:
-    ensemble_patterns = {
-        "ensembleenergy":     ("ensemble average energy", float),
-        "ensembleentropy":    ("ensemble entropy",        float),
-        "ensemblefreeenergy": ("ensemble free energy",   float),
-        "lowestenergy":       ("E lowest",               float),
-        "poplowestpct":       ("population of lowest in %", float),
-        "temperature":        ("T /K",                   float),
-        "uniqueconfs":        ("number of unique conformers", int),
-        "totalconfs":         ("total number unique points", int),
-    }
-    conf_cols = {
-        "relativeenergy":  1,
-        "totalenergy":     2,
-        "conformerweight": 3,
-        "boltzmannweight": 4,
-        "set":             5,
-        "degeneracy":      6,
-    }
-
-    ensemble_data: dict = {}
-    conf_data: list[dict] = []
-    read = False
-
-    try:
-        lines = crest_out_path.read_text(errors="replace").splitlines()
-    except Exception:
-        return None
-
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if "Final Geometry Optimization" in line:
-            read = True
-        if read:
-            for key, (pattern, typ) in ensemble_patterns.items():
-                if line.startswith(pattern):
-                    try:
-                        ensemble_data[key] = typ(line.split()[-1])
-                    except (ValueError, IndexError):
-                        pass
-            if line.startswith("Erel/kcal"):
-                i += 1
-                while i < len(lines):
-                    conf_line = lines[i].strip()
-                    parts = conf_line.split()
-                    if len(parts) < 5:
-                        break
-                    if len(parts) >= 7:
-                        try:
-                            single: dict = {
-                                "relativeenergy":   float(parts[conf_cols["relativeenergy"]]),
-                                "totalenergy":      float(parts[conf_cols["totalenergy"]]),
-                                "conformerweights": [float(parts[conf_cols["conformerweight"]])],
-                                "boltzmannweight":  float(parts[conf_cols["boltzmannweight"]]),
-                                "set":              int(parts[conf_cols["set"]]),
-                                "degeneracy":       int(parts[conf_cols["degeneracy"]]),
-                            }
-                            conf_data.append(single)
-                        except (ValueError, IndexError):
-                            pass
-                    elif conf_data:
-                        try:
-                            conf_data[-1]["conformerweights"].append(float(parts[3]))
-                        except (ValueError, IndexError):
-                            pass
-                    i += 1
-                continue
-        i += 1
-
-    if not ensemble_data:
-        return None
-
-    ensemble_data["conformers"] = conf_data
-    return ensemble_data
-
-
 # ── Parse multi-conformer XYZ ─────────────────────────────────────────────────
 def parse_xyz_ensemble(xyz_path: Path) -> tuple[list, int]:
     conformers = []
@@ -529,97 +484,245 @@ def export_sdf(conformers: list, smiles: str, out_path: Path,
     return True
 
 
-# ── JSON export ───────────────────────────────────────────────────────────────
-def export_json(conformers: list, psa_vals: list, hb_vals: list,
-                weights: np.ndarray, smiles: str, charge: int,
-                crest_log: dict | None, out_path: Path) -> None:
-    conf_records = []
-    for i, (_, _, energy) in enumerate(conformers):
-        rec: dict = {
-            "totalenergy":    float(energy) if np.isfinite(energy) else None,
-            "boltzmannweight": float(weights[i]) if np.isfinite(weights[i]) else None,
-            "psa":            psa_vals[i],
-            "hbonds":         int(hb_vals[i]),
-        }
-        if crest_log and i < len(crest_log.get("conformers", [])):
-            log_conf = crest_log["conformers"][i]
-            rec["relativeenergy"]   = log_conf.get("relativeenergy")
-            rec["conformerweights"] = log_conf.get("conformerweights")
-            rec["set"]              = log_conf.get("set")
-            rec["degeneracy"]       = log_conf.get("degeneracy")
-        conf_records.append(rec)
-
-    data: dict = {"smiles": smiles, "charge": charge, "n_confs": len(conformers)}
-
-    if crest_log:
-        for key in ("ensembleenergy", "ensembleentropy", "ensemblefreeenergy",
-                    "lowestenergy", "poplowestpct", "temperature",
-                    "uniqueconfs", "totalconfs"):
-            if key in crest_log:
-                data[key] = crest_log[key]
-
-    valid_w = np.isfinite(weights)
-    psa_arr = np.array(psa_vals)
-    hb_arr  = np.array(hb_vals, dtype=float)
-    data["boltzmann_psa"] = round(float(np.dot(weights[valid_w], psa_arr[valid_w])), 2)
-    data["boltzmann_hb"]  = round(float(np.dot(weights[valid_w], hb_arr[valid_w])), 2)
-    data["lowen_psa"]     = psa_vals[0]
-    data["lowen_hb"]      = int(hb_vals[0])
-    data["conformers"]    = conf_records
-
-    with open(out_path, "w") as f:
-        json.dump(data, f, indent=2)
+# ── Metadata export (conformer provenance only — no descriptors) ──────────────
+def write_metadata(path: Path, *, smiles: str, name: str, charge: int,
+                   solvent: str, label: str, n_conformers: int) -> None:
+    """Write a small provenance JSON for one solvent leg. Intentionally carries no
+    PSA/H-bond/Boltzmann/permeability values — descriptors are computed downstream."""
+    with open(path, "w") as f:
+        json.dump({
+            "smiles":       smiles,
+            "name":         name,
+            "charge":       charge,
+            "solvent":      solvent,
+            "label":        label,
+            "n_conformers": n_conformers,
+            "source":       SOURCE_TAG,
+        }, f, indent=2)
 
 
-# ── Process one compound ──────────────────────────────────────────────────────
-# ── Registry-free, direct-SMILES entry point (notebook front end) ─────────────
-def check_binaries(require=("xtb", "crest")) -> dict:
-    """Return {binary: resolved_path}. Raise RuntimeError if any required binary is
-    not on PATH, with actionable install guidance. CREST/xTB are external programs;
-    the conformer search cannot run without them."""
-    found = {b: shutil.which(b) for b in require}
-    missing = [b for b, p in found.items() if p is None]
-    if missing:
-        raise RuntimeError(
-            f"Required external binary/binaries not found on PATH: {', '.join(missing)}. "
-            f"The CREST/xTB conformer search cannot run without them. Install with "
-            f"`conda install -c conda-forge xtb crest` (or load your cluster's modules), "
-            f"then restart the kernel/shell so PATH is refreshed.")
-    return found
+# ── One solvent leg ───────────────────────────────────────────────────────────
+def _run_solvent_leg(mol_embedded, template_mol, smiles: str, name: str, short: str,
+                     work_base: Path, solvent: str, label: str, charge: int,
+                     n_threads: int, max_confs: int | None,
+                     constraint_file: Path | None) -> dict:
+    """Generate one solvent's ensemble. Directory layout (kept stable for resume):
+        <work_base>/<label>/xtb_opt/        xTB pre-opt scratch
+        <work_base>/<label>/crest/          CREST run dir (crest.out/err, rotamers, ...)
+        <work_base>/<label>/ensemble.xyz    final multi-conformer XYZ
+        <work_base>/<label>/ensemble.sdf    final SDF
+        <work_base>/<label>/metadata.json   provenance
+    """
+    sol_dir = work_base / label
+    sol_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\n  ── [{label}] solvent={solvent} ──")
+
+    crest_dir = sol_dir / "crest"
+    xyz_in    = crest_dir / f"{short}_{label}_start.xyz"
+    existing_ensemble = crest_dir / "crest_conformers.xyz"
+    existing_rotamers = crest_dir / "crest_rotamers_0.xyz"
+
+    raw_ensemble = None
+    if existing_ensemble.exists() and existing_ensemble.stat().st_size > 0:
+        _log(f"  Steps 2-3: existing CREST ensemble found "
+             f"({existing_ensemble.stat().st_size/1e6:.0f} MB) — skipping xTB + CREST")
+        raw_ensemble = existing_ensemble
+    elif existing_rotamers.exists() and existing_rotamers.stat().st_size > 0 and xyz_in.exists():
+        _log(f"  Steps 2-3: rotamers found ({existing_rotamers.stat().st_size/1e6:.0f} MB)"
+             f" + start xyz exists — skipping xTB, running --cregen")
+        try:
+            raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent, n_threads, charge,
+                                            constraint_file=constraint_file)
+        except Exception as e:
+            print(f"      ⚠ CREST --cregen error: {e}")
+            raw_ensemble = None
+    else:
+        xtb_dir = sol_dir / "xtb_opt"
+        _log(f"  Step 2: xTB pre-opt ({mol_embedded.GetNumConformers()} conformers)...")
+        mol_min = xtb_preopt_mol(mol_embedded, solvent, xtb_dir, charge,
+                                 n_procs=n_threads, constraint_file=constraint_file)
+        if mol_min is None:
+            _log(f"  ⚠ All xTB jobs failed — skipping {label}")
+            return {"solvent": solvent, "label": label,
+                    "status": "failed", "error": "all xTB jobs failed"}
+
+        crest_dir.mkdir(parents=True, exist_ok=True)
+
+        if existing_rotamers.exists() and existing_rotamers.stat().st_size > 0:
+            _log(f"  Step 3: rotamers found ({existing_rotamers.stat().st_size/1e6:.0f} MB)"
+                 f" — running --cregen to skip MTDs")
+            _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(), xyz_in, comment=smiles)
+            try:
+                raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent, n_threads, charge,
+                                                constraint_file=constraint_file)
+            except Exception as e:
+                print(f"      ⚠ CREST --cregen error: {e}")
+                raw_ensemble = None
+        else:
+            _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(), xyz_in, comment=smiles)
+            _log(f"  Step 3: CREST iMTD-GC ({solvent})...")
+            try:
+                raw_ensemble = run_crest(xyz_in, crest_dir, solvent, n_threads, charge,
+                                         constraint_file=constraint_file)
+            except Exception as e:
+                print(f"      ⚠ CREST error: {e}")
+                raw_ensemble = None
+
+    if raw_ensemble is None:
+        return {"solvent": solvent, "label": label,
+                "status": "failed", "error": "no ensemble produced"}
+
+    ensemble_xyz = sol_dir / "ensemble.xyz"
+    shutil.copy2(raw_ensemble, ensemble_xyz)
+    _log(f"  Ensemble saved → {ensemble_xyz.name}")
+
+    conformers, energy_fail = parse_xyz_ensemble(ensemble_xyz)
+    n_confs_full = len(conformers)
+    print(f"      Parsed {n_confs_full} conformers")
+    if energy_fail:
+        _log(f"      Warning: {energy_fail}/{n_confs_full} conformers missing energy")
+    if n_confs_full == 0:
+        return {"solvent": solvent, "label": label,
+                "status": "failed", "error": "empty ensemble"}
+
+    # Optional cap to the N lowest-energy conformers (CREST output is energy-ordered).
+    if max_confs is not None and len(conformers) > max_confs:
+        _log(f"  Capping ensemble: {len(conformers)} → {max_confs} lowest-energy conformers")
+        conformers = conformers[:max_confs]
+    n_confs = len(conformers)
+
+    sdf_path = sol_dir / "ensemble.sdf"
+    if export_sdf(conformers, smiles, sdf_path, template_mol=template_mol):
+        _log(f"      SDF written → {sdf_path.name} ({n_confs} conformers)")
+    else:
+        _log("      ⚠ SDF export failed")
+
+    meta_path = sol_dir / "metadata.json"
+    write_metadata(meta_path, smiles=smiles, name=name, charge=charge,
+                   solvent=solvent, label=label, n_conformers=n_confs)
+    _log(f"      Metadata written → {meta_path.name}")
+
+    return {
+        "solvent":           solvent,
+        "label":             label,
+        "status":            "ok",
+        "n_conformers":      n_confs,
+        "n_conformers_full": n_confs_full,
+        "ensemble_xyz":      str(ensemble_xyz),
+        "ensemble_sdf":      str(sdf_path),
+        "metadata":          str(meta_path),
+    }
 
 
-def _safe_short(name: str) -> str:
-    """Filesystem-safe short label derived from a molecule name (used in filenames)."""
-    s = re.sub(r"[^0-9A-Za-z._-]+", "_", (name or "").strip()).strip("_")
-    return (s or "molecule")[:40]
+# ── Process one molecule across solvent legs ──────────────────────────────────
+def process_molecule(smiles: str, name: str, work_base: Path,
+                     solvent_pairs: list[tuple[str, str]] | None = None,
+                     charge: int | None = None, n_threads: int = 1,
+                     max_confs: int | None = None,
+                     use_diazirine_constraint: bool = True) -> dict:
+    """Generate CREST/xTB conformer ensembles for one molecule across one or more
+    solvent legs.
+
+    solvent_pairs : list of (xtb/CREST solvent, output-directory label). Defaults to
+        SOLVENT_PAIRS_DEFAULT (water/chloroform/cyclohexane). The label names the
+        sub-folder; the solvent string is the xtb/CREST --alpb keyword.
+    charge : formal-charge override; default = sum of RDKit formal charges.
+    use_diazirine_constraint : auto-detect a diazirine and pin its N=N distance
+        (GFN2 otherwise drifts it to ~1.43 Å). A no-op when no diazirine is present.
+    """
+    from rdkit import Chem
+
+    if solvent_pairs is None:
+        solvent_pairs = list(SOLVENT_PAIRS_DEFAULT)
+
+    short = _safe_short(name)
+    print(f"\n{'─'*60}")
+    print(f"  {name}")
+
+    result: dict = {
+        "name":     name,
+        "smiles":   smiles,
+        "run_id":   work_base.name,
+        "solvents": {},
+    }
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        print("  ⚠ Invalid SMILES")
+        result["status"] = "failed"
+        result["error"]  = "invalid SMILES"
+        return result
+    mol = Chem.AddHs(mol)
+    charge = (charge if charge is not None
+              else sum(atom.GetFormalCharge() for atom in mol.GetAtoms()))
+    result["charge"] = charge
+    _log(f"  Charge: {charge}  |  Atoms (with H): {mol.GetNumAtoms()}")
+
+    work_base.mkdir(parents=True, exist_ok=True)
+
+    _log("  Step 1: RDKit ETKDGv3 embedding (5000 → 50)...")
+    try:
+        mol_embedded = embed_rdkit_conformers(mol)
+    except RuntimeError as e:
+        _log(f"  ⚠ Embedding failed: {e}")
+        result["status"] = "failed"
+        result["error"]  = f"embedding failed: {e}"
+        return result
+    _log(f"  Step 1 done: {mol_embedded.GetNumConformers()} conformers")
+    template_mol = mol_embedded
+
+    # Auto-detect a diazirine; if present (and enabled), build the N=N constraint file
+    # once (1-based indices, matching the xyz atom order) and reuse it for every solvent.
+    constraint_file = None
+    if use_diazirine_constraint:
+        nn_atoms = diazirine_nn_atoms(mol_embedded)
+        if nn_atoms is not None:
+            constraint_file = write_constraint_file(
+                (work_base / "diazirine_constrain.inp").resolve(), nn_atoms)
+            _log(f"  Diazirine detected → constraining N=N (atoms {nn_atoms[0]},{nn_atoms[1]}) "
+                 f"to {DIAZIRINE_NN} Å [prevents GFN2's spurious ~1.43 Å]")
+
+    for solvent, label in solvent_pairs:
+        result["solvents"][label] = _run_solvent_leg(
+            mol_embedded, template_mol, smiles, name, short, work_base,
+            solvent, label, charge, n_threads, max_confs, constraint_file)
+
+    failed = [lbl for lbl, info in result["solvents"].items() if info.get("status") != "ok"]
+    if failed:
+        result["failed_solvents"] = ",".join(failed)
+        _log(f"  WARNING: {short} failed for solvent(s): {', '.join(failed)}")
+    result["status"] = "ok" if not failed else "partial"
+    return result
 
 
-def generate_ensembles(smiles: str, name: str = "molecule",
-                       outdir: str | Path = "results/notebook_runs",
-                       charge: int | None = None, n_threads: int | None = None,
-                       max_confs: int | None = None,
-                       check_binaries_first: bool = True) -> dict:
-    """Generate water + chloroform (mem) CREST/xTB conformer ensembles for an **arbitrary
-    SMILES** — the registry-free front end used by the notebook.
-
-    Wraps the existing `process_compound` engine (no logic duplicated); builds a minimal
-    compound record from the SMILES so no entry in `crest_v3.2.REFERENCE_COMPOUNDS` is needed.
+# ── Registry-free, direct-SMILES front end ────────────────────────────────────
+def generate_conformers(smiles: str, name: str = "molecule",
+                        outdir: str | Path = "results/notebook_runs",
+                        charge: int | None = None, n_threads: int | None = None,
+                        max_confs: int | None = None,
+                        solvent_pairs: list[tuple[str, str]] | None = None,
+                        use_diazirine_constraint: bool = True,
+                        check_binaries_first: bool = True) -> dict:
+    """Generate CREST/xTB conformer ensembles for an **arbitrary SMILES** across the
+    given solvent legs — the registry-free front end (used by the notebook).
 
     Parameters
     ----------
-    smiles   : the molecule to sample (validated with RDKit; ValueError if unparseable)
-    name     : optional label (used for the run-dir and file names)
-    outdir   : where the run directory is created
-    charge   : optional formal-charge override (default: auto-derived from the SMILES)
-    n_threads: CPU cores for xTB/CREST (default: all cores)
-    max_confs: cap on conformers kept for the chloroform ensemble (default: engine default, 50)
-    check_binaries_first : if True (default), fail fast with a clear message when xtb/crest
-                           are missing, before doing any work.
+    smiles        : the molecule to sample (validated with RDKit; ValueError if unparseable)
+    name          : optional label (used for the run-dir and file names)
+    outdir        : where the run directory is created
+    charge        : optional formal-charge override (default: auto-derived from the SMILES)
+    n_threads     : CPU cores for xTB/CREST (default: all cores)
+    max_confs     : optional cap on conformers kept per solvent (default: keep all)
+    solvent_pairs : list of (xtb/CREST solvent, folder label); default SOLVENT_PAIRS_DEFAULT
+    use_diazirine_constraint : pin a detected diazirine N=N (no-op if absent)
+    check_binaries_first     : fail fast with a clear message when xtb/crest are missing
 
     Returns
     -------
-    dict with: work_dir, result (the raw engine row), water/mem ensemble paths, and `ok`
-    (True iff all four ensemble files were written).
+    dict with: work_dir, result (the raw engine record), a `solvents` map of
+    {label: {xyz, sdf, metadata, n_conformers, status}}, and `ok`
+    (True iff every solvent leg produced an ensemble).
     """
     from rdkit import Chem
 
@@ -633,307 +736,52 @@ def generate_ensembles(smiles: str, name: str = "molecule",
     if check_binaries_first:
         check_binaries()
 
-    # 3. build a registry-free compound record (metadata fields are optional → None)
-    short = _safe_short(name)
-    cpd = {"name": name, "short": short, "smiles": smiles,
-           "cycpeptmpdb_id": None, "pampa": None, "permeable": None}
+    if solvent_pairs is None:
+        solvent_pairs = list(SOLVENT_PAIRS_DEFAULT)
 
-    # 4. fresh, timestamped run directory
+    # 3. fresh, timestamped run directory
+    short = _safe_short(name)
     n_threads = n_threads or os.cpu_count() or 1
     work_base = Path(outdir) / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{short}"
     work_base.mkdir(parents=True, exist_ok=True)
-    _log(f"Direct-SMILES run: {name}  →  {work_base}")
+    _log(f"Conformer run: {name}  →  {work_base}")
 
-    # 5. run the existing engine (with optional charge override)
-    result = process_compound(cpd, work_base, max_confs=max_confs, dry_run=False,
-                              n_threads=n_threads, charge_override=charge)
+    # 4. run the engine
+    result = process_molecule(smiles, name, work_base, solvent_pairs=solvent_pairs,
+                              charge=charge, n_threads=n_threads, max_confs=max_confs,
+                              use_diazirine_constraint=use_diazirine_constraint)
 
-    # 6. collect + verify outputs
-    paths = {sol: {"sdf": work_base / sol / "ensemble.sdf",
-                   "json": work_base / sol / "ensemble.json"}
-             for sol in ("water", "mem")}
-    ok = all(p.exists() for sol in paths for p in paths[sol].values())
-    return {"work_dir": work_base, "result": result,
-            "water": paths["water"], "mem": paths["mem"], "ok": ok}
-
-
-def process_compound(cpd: dict, work_base: Path,
-                     max_confs: int | None, dry_run: bool,
-                     n_threads: int, charge_override: int | None = None,
-                     solvent_pairs: list[tuple[str, str]] | None = None) -> dict:
-    """Run the CREST/xTB pipeline for one compound across one or more solvent legs.
-
-    solvent_pairs : optional list of (xtb_solvent, label) legs overriding the default
-        [(water, water), (chcl3, mem)]. The FIRST leg is the polar reference used for
-        the ΔPSA/ΔHB deltas; every other leg is treated as apolar (its ensemble is
-        capped to max_confs, exactly like the old chloroform "mem" leg). Example for a
-        water/cyclohexane partition run:
-            [("water", "water"), ("cyclohexane", "cyclohexane")]
-    """
-    from rdkit import Chem
-
-    name  = cpd["name"]
-    short = cpd["short"]
-    smi   = cpd["smiles"]
-
-    print(f"\n{'─'*60}")
-    print(f"  {name}  (ID={cpd['cycpeptmpdb_id']})  PAMPA={cpd['pampa']}")
-
-    result = {
-        "compound":       name,
-        "cycpeptmpdb_id": cpd["cycpeptmpdb_id"],
-        "pampa":          cpd["pampa"],
-        "permeable":      cpd["permeable"],
-        "run_id":         work_base.name,
-    }
-
-    if smi is None:
-        print(f"  ⚠ No SMILES — skipping")
-        return result
-
-    work_base.mkdir(parents=True, exist_ok=True)
-    mol = Chem.MolFromSmiles(smi)
-    if mol is None:
-        print(f"  ⚠ Invalid SMILES")
-        return result
-    mol = Chem.AddHs(mol)
-    charge = (charge_override if charge_override is not None
-              else sum(atom.GetFormalCharge() for atom in mol.GetAtoms()))
-    _log(f"  {'Charge (override)' if charge_override is not None else 'Formal charge'}: "
-         f"{charge}  |  Atoms (with H): {mol.GetNumAtoms()}")
-
-    _log(f"  Step 1: RDKit ETKDGv3 embedding (5000 → 50)...")
-    try:
-        mol_embedded = embed_rdkit_conformers(mol)
-    except RuntimeError as e:
-        _log(f"  ⚠ Embedding failed: {e}")
-        return result
-    _log(f"  Step 1 done: {mol_embedded.GetNumConformers()} conformers")
-    _template_mol = mol_embedded
-
-    # Auto-detect a diazirine; if present, build the N=N constraint file (1-based indices,
-    # consistent with the xyz atom order) once and reuse it for both solvents.
-    nn_atoms = diazirine_nn_atoms(mol_embedded)
-    constraint_file = None
-    if nn_atoms is not None:
-        constraint_file = write_constraint_file(
-            (work_base / "diazirine_constrain.inp").resolve(), nn_atoms)
-        _log(f"  Diazirine detected → constraining N=N (atoms {nn_atoms[0]},{nn_atoms[1]}) "
-             f"to {DIAZIRINE_NN} Å [prevents GFN2's spurious ~1.43 Å]")
-
-    if solvent_pairs is None:
-        solvent_pairs = [(SOLVENT_AQ, LABEL_AQ), (SOLVENT_MEM, LABEL_MEM)]
-    polar_label = solvent_pairs[0][1]   # first leg = polar reference (deltas + no cap)
-
-    failed_solvents = []
-
-    for solvent, label in solvent_pairs:
-        sol_dir = work_base / label
-        sol_dir.mkdir(parents=True, exist_ok=True)
-        print(f"\n  ── [{label}] solvent={solvent} ──")
-
-        if dry_run:
-            rng = np.random.default_rng(42 if label == LABEL_AQ else 43)
-            psa_mean = 180.0 if label == LABEL_AQ else 140.0
-            psa_vals = rng.normal(psa_mean, 10, 50)
-            hb_vals  = rng.integers(0, 4, 50)
-            result[f"{label}_psa_boltz"] = float(psa_vals.mean())
-            result[f"{label}_hb_boltz"]  = float(hb_vals.mean())
-            result[f"{label}_n_confs"]   = 50
-            result[f"{label}_status"]    = "dry_run"
-            continue
-
-        crest_dir = sol_dir / "crest"
-        xyz_in    = crest_dir / f"{short}_{label}_start.xyz"
-        existing_ensemble = crest_dir / "crest_conformers.xyz"
-        existing_rotamers = crest_dir / "crest_rotamers_0.xyz"
-
-        if existing_ensemble.exists() and existing_ensemble.stat().st_size > 0:
-            _log(f"  Steps 2-3: existing CREST ensemble found "
-                 f"({existing_ensemble.stat().st_size/1e6:.0f} MB) — skipping xTB + CREST")
-            raw_ensemble = existing_ensemble
-        elif existing_rotamers.exists() and existing_rotamers.stat().st_size > 0 and xyz_in.exists():
-            _log(f"  Steps 2-3: rotamers found ({existing_rotamers.stat().st_size/1e6:.0f} MB)"
-                 f" + start xyz exists — skipping xTB, running --cregen")
-            try:
-                raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent, n_threads, charge,
-                                                constraint_file=constraint_file)
-            except Exception as e:
-                print(f"      ⚠ CREST --cregen error: {e}")
-                raw_ensemble = None
-        else:
-            xtb_dir = sol_dir / "xtb_opt"
-            _log(f"  Step 2: xTB pre-opt ({mol_embedded.GetNumConformers()} conformers)...")
-            mol_min = xtb_preopt_mol(mol_embedded, solvent, xtb_dir, charge,
-                                     n_procs=n_threads, constraint_file=constraint_file)
-            if mol_min is None:
-                _log(f"  ⚠ All xTB jobs failed — skipping {label}")
-                result[f"{label}_status"] = "failed"
-                result[f"{label}_error"]  = "all xTB jobs failed"
-                failed_solvents.append(label)
-                continue
-
-            crest_dir.mkdir(parents=True, exist_ok=True)
-
-            if existing_rotamers.exists() and existing_rotamers.stat().st_size > 0:
-                _log(f"  Step 3: rotamers found ({existing_rotamers.stat().st_size/1e6:.0f} MB)"
-                     f" — running --cregen to skip MTDs")
-                _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(), xyz_in, comment=smi)
-                try:
-                    raw_ensemble = run_crest_cregen(xyz_in, crest_dir, solvent, n_threads, charge,
-                                                constraint_file=constraint_file)
-                except Exception as e:
-                    print(f"      ⚠ CREST --cregen error: {e}")
-                    raw_ensemble = None
-            else:
-                _write_conformer_xyz(mol_min, mol_min.GetConformer().GetId(), xyz_in, comment=smi)
-                _log(f"  Step 3: CREST iMTD-GC ({solvent})...")
-                try:
-                    raw_ensemble = run_crest(xyz_in, crest_dir, solvent, n_threads, charge,
-                                             constraint_file=constraint_file)
-                except Exception as e:
-                    print(f"      ⚠ CREST error: {e}")
-                    raw_ensemble = None
-
-        if raw_ensemble is None:
-            result[f"{label}_status"] = "failed"
-            result[f"{label}_error"]  = "no ensemble produced"
-            failed_solvents.append(label)
-            continue
-
-        ensemble_xyz = sol_dir / "ensemble.xyz"
-        shutil.copy2(raw_ensemble, ensemble_xyz)
-        _log(f"  Ensemble saved → {ensemble_xyz.name}")
-
-        conformers, energy_fail = parse_xyz_ensemble(ensemble_xyz)
-        n_confs_full = len(conformers)
-        print(f"      Parsed {n_confs_full} conformers")
-        if energy_fail:
-            _log(f"      Warning: {energy_fail}/{n_confs_full} conformers missing energy")
-
-        if n_confs_full == 0:
-            result[f"{label}_status"] = "failed"
-            result[f"{label}_error"]  = "empty ensemble"
-            failed_solvents.append(label)
-            continue
-
-        if label != polar_label:   # cap apolar legs (was: solvent == SOLVENT_MEM)
-            max_post = max_confs if max_confs is not None else 50
-            if len(conformers) > max_post:
-                _log(f"  Capping ensemble: {len(conformers)} → {max_post} lowest-energy conformers")
-            conformers = conformers[:max_post]
-        n_confs = len(conformers)
-
-        psa_vals, hb_vals, energies = [], [], []
-        for syms, crds, eng in conformers:
-            psa_vals.append(compute_psa_xyz(syms, crds, template_mol=_template_mol))
-            hb_vals.append(count_hbonds_xyz(syms, crds))
-            energies.append(eng)
-
-        psa_arr = np.array(psa_vals)
-        hb_arr  = np.array(hb_vals, dtype=float)
-        try:
-            weights = boltzmann_weights(energies)
-        except RuntimeError as e:
-            _log(f"  ⚠ Boltzmann weighting failed ({e}) — skipping {label}")
-            result[f"{label}_status"] = "failed"
-            result[f"{label}_error"]  = str(e)
-            failed_solvents.append(label)
-            continue
-        valid_w = np.isfinite(weights)
-
-        psa_boltz = float(np.dot(weights[valid_w], psa_arr[valid_w]))
-        hb_boltz  = float(np.dot(weights[valid_w], hb_arr[valid_w]))
-
-        result[f"{label}_psa_lowen"]    = round(float(psa_arr[0]), 2)
-        result[f"{label}_psa_boltz"]    = round(psa_boltz, 2)
-        result[f"{label}_psa_min"]      = round(float(psa_arr.min()), 2)
-        result[f"{label}_psa_max"]      = round(float(psa_arr.max()), 2)
-        result[f"{label}_psa_mean"]     = round(float(psa_arr.mean()), 2)
-        result[f"{label}_psa_std"]      = round(float(psa_arr.std()), 2)
-        result[f"{label}_hb_lowen"]     = int(hb_arr[0])
-        result[f"{label}_hb_boltz"]     = round(hb_boltz, 2)
-        result[f"{label}_hb_min"]       = int(hb_arr.min())
-        result[f"{label}_hb_max"]       = int(hb_arr.max())
-        result[f"{label}_hb_mean"]      = round(float(hb_arr.mean()), 2)
-        result[f"{label}_n_confs"]      = n_confs
-        result[f"{label}_n_confs_full"] = n_confs_full
-        result[f"{label}_status"]       = "ok"
-
-        print(f"      PSA (Boltzmann): {psa_boltz:.1f} Å²  "
-              f"(low-energy={psa_arr[0]:.1f}, mean={psa_arr.mean():.1f})")
-        print(f"      HB  (Boltzmann): {hb_boltz:.2f}  (low-energy={int(hb_arr[0])})")
-
-        crest_log = None
-        for log_candidate in [sol_dir / "crest" / "crest_cregen.out",
-                               sol_dir / "crest" / "crest.out"]:
-            if log_candidate.exists():
-                crest_log = parse_crest_log(log_candidate)
-                if crest_log:
-                    _log(f"      {log_candidate.name} parsed: "
-                         f"{crest_log.get('uniqueconfs','?')} unique confs")
-                    break
-        if not crest_log:
-            _log(f"      No parseable CREST log found — JSON will omit thermodynamics")
-
-        sdf_path = sol_dir / "ensemble.sdf"
-        if export_sdf(conformers, smi, sdf_path, template_mol=_template_mol):
-            _log(f"      SDF written → {sdf_path.name} ({n_confs} conformers)")
-        else:
-            _log(f"      ⚠ SDF export failed")
-
-        json_path = sol_dir / "ensemble.json"
-        export_json(conformers, psa_vals, hb_vals, weights, smi, charge, crest_log, json_path)
-        _log(f"      JSON written → {json_path.name}")
-
-        partial_csv = work_base / f"{short}_results_partial.csv"
-        pd.DataFrame([result]).to_csv(partial_csv, index=False)
-        _log(f"      Checkpoint saved → {partial_csv.name}")
-
-    if failed_solvents:
-        _log(f"  WARNING: {short} failed for solvent(s): {', '.join(sorted(set(failed_solvents)))}")
-        result["failed_solvents"] = ",".join(sorted(set(failed_solvents)))
-
-    # Deltas between the polar reference (first leg) and the apolar phase (last leg).
-    # Result keys are kept generic ("crest_delta_psa", ..._aq/_mem) so downstream tooling
-    # is unchanged whether the apolar phase is chloroform ("mem") or cyclohexane.
-    apolar_label = solvent_pairs[-1][1]
-    aq_key  = f"{polar_label}_psa_boltz"
-    mem_key = f"{apolar_label}_psa_boltz"
-    if len(solvent_pairs) >= 2 and aq_key in result and mem_key in result:
-        result["crest_delta_psa"]      = round(result[aq_key] - result[mem_key], 2)
-        aq_lo  = result.get(f"{polar_label}_psa_lowen",  np.nan)
-        mem_lo = result.get(f"{apolar_label}_psa_lowen", np.nan)
-        result["crest_delta_psa_lowen"] = round(aq_lo - mem_lo, 2) if pd.notna(aq_lo) and pd.notna(mem_lo) else np.nan
-        result["crest_delta_hb"]        = round(result[f"{apolar_label}_hb_boltz"] - result[f"{polar_label}_hb_boltz"], 2)
-        result["crest_psa_spread_aq"]   = result.get(f"{polar_label}_psa_std",  np.nan)
-        result["crest_psa_spread_mem"]  = result.get(f"{apolar_label}_psa_std", np.nan)
-        print(f"\n  ✓ CREST ΔPSA (Boltzmann) = {result['crest_delta_psa']:.1f} Å²  "
-              f"(low-energy = {result['crest_delta_psa_lowen']:.1f} Å²  "
-              f"ΔHB = {result['crest_delta_hb']:.2f})")
-
-    return result
+    # 5. collect outputs
+    solvents_out = {}
+    for label, info in result["solvents"].items():
+        solvents_out[label] = {
+            "xyz":          Path(info["ensemble_xyz"]) if info.get("ensemble_xyz") else None,
+            "sdf":          Path(info["ensemble_sdf"]) if info.get("ensemble_sdf") else None,
+            "metadata":     Path(info["metadata"]) if info.get("metadata") else None,
+            "n_conformers": info.get("n_conformers"),
+            "status":       info.get("status"),
+        }
+    ok = bool(result["solvents"]) and all(v["status"] == "ok" for v in solvents_out.values())
+    return {"work_dir": work_base, "result": result, "solvents": solvents_out, "ok": ok}
 
 
 # ── Resume logic ──────────────────────────────────────────────────────────────
-def find_resume_dir(runs_base: Path, compound_idx: int, short: str) -> Path | None:
-    """Return the most recent incomplete run dir (has checkpoint data but no final CSV)."""
+def find_resume_dir(runs_base: Path, compound_idx: int, short: str,
+                    labels: tuple[str, ...] = ("water", "chloroform", "cyclohexane")) -> Path | None:
+    """Return the most recent incomplete run dir (has CREST checkpoint data but no
+    final manifest)."""
     if not runs_base.exists():
         return None
-    checkpoint_paths = [
-        f"{label}/crest/crest_conformers.xyz"
-        for label in ("water", "mem")
-    ] + [
-        f"{label}/crest/crest_rotamers_0.xyz"
-        for label in ("water", "mem")
-    ]
+    checkpoint_paths = (
+        [f"{label}/crest/crest_conformers.xyz" for label in labels]
+        + [f"{label}/crest/crest_rotamers_0.xyz" for label in labels]
+    )
     candidates = sorted(
         runs_base.glob(f"run_*_{compound_idx}_{short}"),
         reverse=True,
     )
     for d in candidates:
-        final_csv = d / f"{short}_results.csv"
-        if final_csv.exists():
+        if (d / f"{short}_manifest.json").exists():
             continue
         if any((d / p).exists() for p in checkpoint_paths):
             return d

@@ -6,9 +6,9 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=32G
 #SBATCH --partition=all
-#SBATCH --array=0-13
-# To throttle how many array tasks run at once, append %N to the range above,
-# e.g. --array=0-13%7 runs at most 7 concurrently.
+#SBATCH --array=0-13%2
+# %2 = at most 2 array tasks run concurrently (lower peak load; longer wall-clock).
+# Adjust the number after % to run more/fewer at once, e.g. --array=0-13%4.
 
 set -euo pipefail
 

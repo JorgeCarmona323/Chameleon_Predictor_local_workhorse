@@ -6,8 +6,8 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=32G
 #SBATCH --partition=all
-#SBATCH --array=0-13%2
-# %2 = at most 2 array tasks run concurrently (lower peak load; longer wall-clock).
+#SBATCH --array=0-13%3
+# %3 = at most 3 array tasks run concurrently (lower peak load; longer wall-clock).
 # Adjust the number after % to run more/fewer at once, e.g. --array=0-13%4.
 
 set -euo pipefail
@@ -44,11 +44,16 @@ IDX="${COMPOUNDS[$SLURM_ARRAY_TASK_ID]}"
 echo "===== CREST cyclohexane | array task=$SLURM_ARRAY_TASK_ID compound=$IDX | $(date) ====="
 echo "Node: $(hostname)   Python: $(which python)"
 
-# Cyclohexane leg only (adds a cyclohexane/ ensemble alongside any existing water/chloroform).
+# One apolar leg written to a cyclohexane/ folder.
+# ALPB has NO cyclohexane parameter set, so xTB/CREST generate the geometries in the
+# closest ALPB hydrocarbon surrogate, hexadecane (ε≈2.05 vs cyclohexane 2.02). The folder
+# is still labelled "cyclohexane" so the downstream CPCM-X step — which DOES have a
+# cyclohexane parameter set — scores this ensemble in real cyclohexane (--cpcmx cyclohexane).
+# LABEL=SOLVENT: label=cyclohexane (folder), solvent=hexadecane (xtb --alpb keyword).
 python scripts/crest_v3.2.py \
     --compound "$IDX" \
     --threads 20 \
     --outdir results \
-    --solvents cyclohexane=cyclohexane
+    --solvents cyclohexane=hexadecane
 
 echo "===== Done array task=$SLURM_ARRAY_TASK_ID compound=$IDX | $(date) ====="

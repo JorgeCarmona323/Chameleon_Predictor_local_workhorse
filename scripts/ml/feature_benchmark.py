@@ -32,6 +32,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  # Windows OpenMP conflict between t
 
 import numpy as np
 import pandas as pd
+from rdkit import Chem  # module-level: main()'s _canonical() + F7 merge need it
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import roc_auc_score
@@ -54,10 +55,17 @@ MORGAN_BIT_DIM   = 2048
 MORGAN_COUNT_DIM_SMALL = 500
 MORGAN_COUNT_DIM_LARGE = 2048
 
+# Richer validated-core F7 (2026-07-07): apolar 3D-PSA + radius of gyration +
+# backbone-transannular IMHB + shape, from cremp_descriptors_richer.py. All
+# ENERGY-FREE unweighted ensemble stats — the 3 energy-weighted columns of the
+# old PSA-only set (bw_psa3d, ensemble_energy, pop_lowest_pct) are intentionally
+# dropped until the energy reruns land. Old set kept in git history / the
+# 2026-07-07 experiment writeup.
 F7_COLS = [
-    "aq_psa3d", "mem_psa3d", "delta_psa3d", "psa3d_std",
-    "psa3d_spread", "bw_psa3d", "norm_delta_psa",
-    "ensemble_energy", "pop_lowest_pct", "unique_confs",
+    "psa_mean", "psa_min", "psa_max", "psa_spread",
+    "rg_mean", "rg_min", "rg_max", "rg_spread",
+    "imhb_total_mean", "imhb_bb_mean", "imhb_total_max",
+    "npr1_mean", "npr2_mean", "asphericity_mean",
 ]
 
 # ── Feature generators ────────────────────────────────────────────────────────

@@ -14,9 +14,10 @@ from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 import copy
 
-MD_PATH  = Path(__file__).parent.parent / "docs" / "writeup_2026-03-18.md"
-OUT_PATH = Path(__file__).parent.parent / "docs" / "Carmona_Chameleon_Predictor_Report_2026-03-18.docx"
-FIG_DIR  = Path(__file__).parent.parent / "results" / "figures"
+REPO     = Path(__file__).parent.parent
+MD_PATH  = REPO / "docs" / "writeup_2026-03-18.md"
+OUT_PATH = REPO / "docs" / "Carmona_Chameleon_Predictor_Report_2026-03-18.docx"
+FIG_DIR  = REPO / "results" / "figures"
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -63,14 +64,20 @@ def _add_runs(p, text, bold=False, italic=False, name="Calibri", size=11, color=
 
 def add_paragraph(doc, text, style="Normal"):
     p = doc.add_paragraph(style=style)
-    # Split on bold (**text**) and inline code (`text`) first
-    parts = re.split(r'(\*\*[^*]+\*\*|`[^`]+`)', text)
+    # Split on bold (**text**), italic (*text*), inline code (`text`), ACS citation (^{1,2}^)
+    parts = re.split(r'(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\^\{[^}]+\}\^)', text)
     for part in parts:
         if part.startswith("**") and part.endswith("**"):
             _add_runs(p, part[2:-2], bold=True)
+        elif part.startswith("*") and part.endswith("*") and len(part) > 2:
+            _add_runs(p, part[1:-1], italic=True)
         elif part.startswith("`") and part.endswith("`"):
             _add_runs(p, part[1:-1], name="Courier New", size=9,
                       color=(0x2E, 0x86, 0xC1), code=True)
+        elif part.startswith("^{") and part.endswith("}^"):
+            cite = p.add_run(part[2:-2])          # ACS numeric superscript citation
+            set_font(cite, name="Calibri", size=8)
+            cite.font.superscript = True
         else:
             _add_runs(p, part)
     return p
@@ -131,17 +138,28 @@ def add_code_block(doc, code_text):
     pPr.append(shd)
     return p
 
-def try_insert_figure(doc, fig_name, caption):
-    """Insert figure image if it exists, else insert placeholder."""
-    # Map markdown image links to actual filenames
+# Figures rendered full page-width on their own page (busy multi-panel figures that
+# need to be seen clearly); 6.1 in = the usable width inside the 3 cm L/R margins.
+PAGE_FIGS = {"fig2_key3d", "fig3_pmi"}
+
+
+def try_insert_figure(doc, src, caption):
+    """Insert figure image if it exists, else insert placeholder.
+    `src` is the path as written in the markdown; try it relative to the repo
+    root first (so subdirs like isomers/ or isomers/3d/ resolve), then fall back
+    to the figures dir by name."""
     candidates = [
-        FIG_DIR / fig_name,
-        FIG_DIR / (fig_name.replace("figures/", "")),
+        REPO / src,
+        FIG_DIR / src,
+        FIG_DIR / Path(src).name,
     ]
+    full_page = Path(src).stem in PAGE_FIGS
     for path in candidates:
         if path.exists():
             try:
-                doc.add_picture(str(path), width=Inches(5.5))
+                if full_page:
+                    doc.add_page_break()        # isolate it on its own page
+                doc.add_picture(str(path), width=Inches(6.1 if full_page else 5.5))
                 last_para = doc.paragraphs[-1]
                 last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 cap = doc.add_paragraph(caption)
@@ -216,7 +234,7 @@ def build_docx(md_path, out_path):
             continue
 
         # ── Author / date line (bold+italic line after title) ─────────────
-        if line.startswith("**") and line.endswith("**") and "March" in line:
+        if line.startswith("**") and line.endswith("**") and ("·" in line or "March" in line):
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             run = p.add_run(line.strip("*"))
@@ -251,9 +269,18 @@ def build_docx(md_path, out_path):
         if m:
             caption = m.group(1)
             src     = m.group(2)
-            # Extract just filename
-            fig_name = Path(src).name
-            try_insert_figure(doc, fig_name, caption)
+            try_insert_figure(doc, src, caption)
+            i += 1
+            continue
+
+        # ── Blockquote (abstract / callout) ──────────────────────────────────
+        if line.startswith(">"):
+            content = line.lstrip(">").strip()
+            if content:
+                p = add_paragraph(doc, content)
+                p.paragraph_format.left_indent = Cm(0.8)
+                for run in p.runs:
+                    run.font.italic = True
             i += 1
             continue
 
@@ -277,4 +304,9 @@ def build_docx(md_path, out_path):
     print(f"Saved: {out_path}")
 
 if __name__ == "__main__":
-    build_docx(MD_PATH, OUT_PATH)
+    import argparse
+    ap = argparse.ArgumentParser(description="Convert a Markdown report to a formatted .docx")
+    ap.add_argument("--input", type=Path, default=MD_PATH)
+    ap.add_argument("--output", type=Path, default=OUT_PATH)
+    args = ap.parse_args()
+    build_docx(args.input, args.output)

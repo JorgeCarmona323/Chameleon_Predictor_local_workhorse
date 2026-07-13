@@ -10,7 +10,6 @@
 # HexPep (Rezai hexamer, --compound 0) hexane leg — the one phase we're missing for the
 # solvent-model comparison. Same engine/settings as the 14-compound hexane array; hexane
 # is ALPB-valid so no surrogate. Writes results/runs/run_<ts>_0_HexPep/hexane/.
-# HexPep has historically been a slow CREST case, so give it the overnight it needs.
 
 set -euo pipefail
 

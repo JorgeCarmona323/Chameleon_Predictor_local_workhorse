@@ -35,7 +35,7 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import rdMolDescriptors
 from tqdm import tqdm
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # scripts/ (for phys_descriptors_v3)
 from phys_descriptors_v3 import (
     surface_descriptors_mol,
     imhb_descriptors_mol,

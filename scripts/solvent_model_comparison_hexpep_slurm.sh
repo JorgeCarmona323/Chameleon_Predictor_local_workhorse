@@ -13,9 +13,9 @@
 # ΔG_transfer(water -> hexane). Goal: gauge how CPCM-X energies behave for our macrocycle
 # system relative to the other models (later anchored to HexPep's Rezai NMR).
 #
-# Models run here (all native xtb single-points): ALPB, ddCOSMO, CPCM-X.
-#   SMD is NOT in xtb — it needs ORCA CPCM(SMD) DFT single-points (separate arm, TODO).
-#   GBSA is also available (add "gbsa" to the loop) if you want the legacy GB model too.
+# Models run here (native xtb single-points only): ALPB, CPCM-X.
+#   COSMO(-RS) and SMD move to a separate ORCA arm (more synergy with ORCA; DFT-level),
+#   prepped once ORCA is installed. GBSA (legacy GB) is available in xtb too if wanted.
 #
 # Only water + hexane are compared: their xtb keyword is identical across all models,
 # whereas chloroform is "chcl3" for ALPB/GBSA/ddCOSMO but "chloroform" for CPCM-X — and
@@ -45,7 +45,7 @@ echo "water  = $WATER"
 echo "hexane = $HEXANE"
 
 # --- score water + hexane with each xtb solvation model --------------------------------
-for METHOD in alpb cosmo cpcmx; do
+for METHOD in alpb cpcmx; do
     echo "=== HexPep | model=$METHOD | $(date) ==="
     python scripts/free_energy_calculator.py \
         --method "$METHOD" --ewin 8 --ref water --charge 0 --jobs "$JOBS" \

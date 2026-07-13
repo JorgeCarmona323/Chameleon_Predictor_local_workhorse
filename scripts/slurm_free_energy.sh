@@ -1,37 +1,79 @@
 #!/bin/bash
-#SBATCH --job-name=fe_calc
-#SBATCH --output=fe_%A_%a.out
-#SBATCH --array=0-0            # set to 0-(N-1) for N molecules
-#SBATCH --cpus-per-task=8
-#SBATCH --time=02:00:00
-#SBATCH --mem=8G
+#SBATCH --job-name=fe_cpcmx
+#SBATCH --output=results/slurm_logs/%x_%j.out
+#SBATCH --error=results/slurm_logs/%x_%j.err
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=20
+#SBATCH --mem=16G
+#SBATCH --partition=all
+#SBATCH --time=04:00:00
 #
-# Free-energy / ΔG_transfer scoring of native per-phase CREST ensembles.
-# One array task per molecule. Edit MOLS to point at each molecule's phase dirs;
-# each dir must contain a native ensemble.xyz (water + cyclohexane, CREST-generated).
+# ΔG_transfer scoring — GFN2-xTB + CPCM-X single-points on the native per-phase
+# CREST ensembles (no re-search, no re-optimization).
 #
-# xTB is Linux-only -> this runs on the HPC. Confirm the solvent keywords
-# ("cyclohexane" and CPCM-X support) with `xtb --version` / `xtb --help` first.
+# Auto-discovers every compound under CONFORMERS_ROOT that has a hexane/ensemble.xyz
+# and pairs it with the sibling water/ and chcl3/ ensembles. One free_energy_calculator
+# run per compound scores all its phases together and reports:
+#     ΔG_transfer(water -> chloroform)  and  ΔG_transfer(water -> hexane)
+# CPCM-X solvent keywords used: water, chloroform, hexane (all in the CPCM-X DB).
+#
+# xTB is Linux-only, so this runs on the HPC. The conformer tree must be present here:
+# the curated results/conformers/ was organized locally, so rsync/scp it to the HPC
+# (under $REPO_DIR/results/conformers) before submitting.
+#
+# Cost: single-points are seconds each and run --jobs-parallel, and --ewin trims each
+# ensemble to its low-energy window first — so all 14 finish in ~tens of minutes, not
+# the hours CREST took. Submit with:  sbatch scripts/slurm_free_energy.sh
 
 set -euo pipefail
-module load xtb || true            # or: conda activate <env-with-xtb>
-export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-8}
-export OMP_STACKSIZE=4G
 
-# --- one line per molecule: "<label> <water_dir> <apolar_dir>" -----------------
-MOLS=(
-  "DOPC_3-12-8-12_S  results/conformers/.../DOPC_3-12-8-12_S/water  results/conformers/.../DOPC_3-12-8-12_S/cyclohexane"
-  # "DOPC_3-12-8-12_R  .../water  .../cyclohexane"
-)
+REPO_DIR="$HOME/Chameleon_Predictor"
+CONFORMERS_ROOT="$REPO_DIR/results/conformers"
+OUTDIR="$REPO_DIR/results/free_energy"
+EWIN=8                                   # kcal/mol GFN2 pre-filter before CPCM-X
+JOBS="${SLURM_CPUS_PER_TASK:-20}"
 
-read -r LABEL WATER_DIR APOLAR_DIR <<< "${MOLS[$SLURM_ARRAY_TASK_ID]}"
-echo "scoring $LABEL"
+cd "$REPO_DIR"
+mkdir -p "$OUTDIR" results/slurm_logs
 
-python scripts/free_energy_calculator.py \
-    --method cpcmx \
-    --leg "water=${WATER_DIR}/ensemble.xyz" \
-    --leg "cyclohexane=${APOLAR_DIR}/ensemble.xyz" \
-    --ref water \
-    --charge 0 \
-    --jobs "${SLURM_CPUS_PER_TASK:-8}" \
-    --out "fe_${LABEL}.csv"
+source "$HOME/miniconda3/etc/profile.d/conda.sh"
+conda activate chameleon_crest212        # env with xtb (CPCM-X) on PATH
+export OMP_NUM_THREADS=1                 # 1 thread/xtb → run $JOBS single-points in parallel
+
+echo "Discovering compounds under: $CONFORMERS_ROOT"
+mapfile -t HEXDIRS < <(find "$CONFORMERS_ROOT" -type d -name hexane | sort)
+echo "Found ${#HEXDIRS[@]} compound(s) with a hexane ensemble:"
+printf '  %s\n' "${HEXDIRS[@]}"
+echo
+
+for hexdir in "${HEXDIRS[@]}"; do
+    cdir=$(dirname "$hexdir")            # the compound directory
+
+    # label from the hexane manifest filename (e.g. DOPCdz_R_manifest.json -> DOPCdz_R)
+    manifest=$(find "$hexdir" -maxdepth 1 -name '*_manifest.json' | head -1)
+    if [ -n "$manifest" ]; then
+        label=$(basename "$manifest" _manifest.json)
+    else
+        label=$(echo "${cdir#"$CONFORMERS_ROOT"/}" | tr ' /' '__')
+    fi
+
+    # match the charge used at generation (read from the hexane metadata; default 0)
+    charge=$(grep -oE '"charge"[^0-9-]*(-?[0-9]+)' "$hexdir/metadata.json" 2>/dev/null \
+             | grep -oE '\-?[0-9]+$' || true)
+    charge=${charge:-0}
+
+    # build legs from whichever phases exist (water + chloroform + hexane)
+    legs=()
+    [ -f "$cdir/water/ensemble.xyz" ] && legs+=(--leg "water=$cdir/water/ensemble.xyz")
+    [ -f "$cdir/chcl3/ensemble.xyz" ] && legs+=(--leg "chloroform=$cdir/chcl3/ensemble.xyz")
+    legs+=(--leg "hexane=$hexdir/ensemble.xyz")
+
+    echo "=== $label  |  $(( ${#legs[@]} / 2 )) legs  |  charge $charge  |  $(date) ==="
+    python scripts/free_energy_calculator.py \
+        --method cpcmx --ewin "$EWIN" --ref water --charge "$charge" --jobs "$JOBS" \
+        "${legs[@]}" \
+        --out "$OUTDIR/fe_${label}.csv"
+done
+
+echo
+echo "All done. Per-compound results (+ .summary.csv with ΔG_transfer) in: $OUTDIR"

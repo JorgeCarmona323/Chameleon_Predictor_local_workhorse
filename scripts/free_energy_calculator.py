@@ -103,10 +103,12 @@ def xtb_score(xyz_text, solvent, method, charge, xtb_bin, gfn, uhf, add_gsolv):
     """
     with tempfile.TemporaryDirectory(prefix="xtb_") as td:
         (Path(td) / "conf.xyz").write_text(xyz_text)
-        if method == "cpcmx":
-            solv_flag = ["--cpcmx", solvent]
-        else:
-            solv_flag = ["--alpb", solvent]
+        solv_flag = {
+            "cpcmx": ["--cpcmx", solvent],   # extended CPCM (post-SCF); Gsolv on stdout
+            "alpb":  ["--alpb", solvent],     # ALPB (self-consistent; Gsolv in total)
+            "gbsa":  ["--gbsa", solvent],     # legacy GBSA (self-consistent)
+            "cosmo": ["--cosmo", solvent],    # ddCOSMO (electrostatic screening only)
+        }[method]
         cmd = [xtb_bin, "conf.xyz", "--gfn", gfn, *solv_flag,
                "--chrg", str(charge), "--uhf", str(uhf), "--json"]
         try:
@@ -265,7 +267,9 @@ def main(argv=None):
                          "hexane).")
     ap.add_argument("--ref", default="water",
                     help="reference solvent for ΔG_transfer (default water)")
-    ap.add_argument("--method", choices=["cpcmx", "alpb"], default="cpcmx")
+    ap.add_argument("--method", choices=["cpcmx", "alpb", "gbsa", "cosmo"], default="cpcmx",
+                    help="xtb solvation model for the single-points. SMD is NOT available in "
+                         "xtb (it needs ORCA) — run that as a separate DFT arm.")
     ap.add_argument("--compare", action="store_true",
                     help="score every leg with BOTH cpcmx and alpb and print ΔG_transfer "
                          "side-by-side (the one-time methods check); overrides --method")

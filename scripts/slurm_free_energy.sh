@@ -36,8 +36,7 @@ JOBS="${SLURM_CPUS_PER_TASK:-20}"
 cd "$REPO_DIR"
 mkdir -p "$OUTDIR" results/slurm_logs
 
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate chameleon_crest212        # env with xtb (CPCM-X) on PATH
+source scripts/env.sh                    # conda env + CPCM-X-enabled xtb (single source of truth)
 export OMP_NUM_THREADS=1                 # 1 thread/xtb → run $JOBS single-points in parallel
 
 echo "Discovering compounds under: $CONFORMERS_ROOT"

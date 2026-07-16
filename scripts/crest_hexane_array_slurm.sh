@@ -16,8 +16,7 @@ REPO_DIR="$HOME/Chameleon_Predictor"
 cd "$REPO_DIR"
 mkdir -p results/slurm_logs results/runs
 
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate chameleon_crest212
+source scripts/env.sh                     # conda env + CPCM-X-enabled xtb (single source of truth)
 
 # 14 jobs: 5 scaffolds × {xylene, diazirine}; the 3-12 series also × {R, S}.
 # Each value is a --compound index into REFERENCE_COMPOUNDS (scripts/crest_v3.2.py).

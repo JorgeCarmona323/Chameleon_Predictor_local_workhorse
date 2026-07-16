@@ -27,18 +27,9 @@ set -euo pipefail
 REPO_DIR="$HOME/Chameleon_Predictor"
 cd "$REPO_DIR"
 mkdir -p results/free_energy results/slurm_logs
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate chameleon_crest212
-# CPCM-X requires an xtb built WITH the CPCM-X library. The conda xtb in chameleon_crest212
-# was compiled without it ("CPCM-X library was not included in this version of xTB"), so we
-# override PATH with the official grimme-lab xtb release binary (cpcmx + params bundled) for
-# BOTH legs — keeps the ALPB vs CPCM-X comparison on one consistent binary. XTBPATH points at
-# its parameter dir. This affects only this scoring job; generation stays on the conda xtb.
-export PATH="$HOME/xtb-dist/bin:$PATH"
-export XTBPATH="$HOME/xtb-dist/share/xtb"
+source scripts/env.sh                    # conda env + CPCM-X-enabled xtb (single source of truth)
 export OMP_NUM_THREADS=1                 # 1 thread/xtb → run $JOBS single-points in parallel
 JOBS="${SLURM_CPUS_PER_TASK:-20}"
-command -v xtb >/dev/null && echo "xtb = $(which xtb)  ($(xtb --version 2>&1 | grep -i version | head -1))"
 
 # --- HexPep per-phase ensembles (canonical conformers tree) ----------------------------
 # Both phases live under results/conformers/HexPep/. hexane came from the recent CREST run

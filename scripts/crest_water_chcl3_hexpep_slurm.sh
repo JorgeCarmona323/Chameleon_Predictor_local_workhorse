@@ -26,8 +26,7 @@ REPO_DIR="$HOME/Chameleon_Predictor"
 cd "$REPO_DIR"
 mkdir -p results/slurm_logs results/runs
 
-source "$HOME/miniconda3/etc/profile.d/conda.sh"
-conda activate chameleon_crest212
+source scripts/env.sh                     # conda env + CPCM-X-enabled xtb (single source of truth)
 
 echo "===== CREST water+chcl3 | HexPep (compound 0) | $(date) ====="
 echo "Node: $(hostname)   Python: $(which python)"

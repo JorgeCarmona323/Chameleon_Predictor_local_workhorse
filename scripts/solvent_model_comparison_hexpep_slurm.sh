@@ -58,7 +58,8 @@ done
 
 echo
 echo "Done. Compare ΔG_transfer across models:"
-echo "  results/free_energy/hexpep_solvcmp_{alpb,cosmo,cpcmx}.summary.csv"
-echo "NOTE (CPCM-X): if its ΔG_transfer looks off vs the others, the JSON total is likely"
-echo "  gas-phase — re-run cpcmx with --cpcmx-add-gsolv and compare. That IS the open question"
-echo "  this experiment is meant to answer."
+echo "  results/free_energy/hexpep_solvcmp_{alpb,cpcmx}.summary.csv"
+echo "NOTE (CPCM-X): xtb's json 'total energy' under --cpcmx already includes Gsolv"
+echo "  (verified in xtb source: main.F90:996 -> cpx.F90:108 -> json.F90:160), so we read it"
+echo "  as-is; --cpcmx-add-gsolv is NOT used (it would double-count). If ALPB and CPCM-X"
+echo "  ΔG_transfer still diverge wildly, that's a model difference to interpret, not a bug."

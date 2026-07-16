@@ -95,11 +95,13 @@ def parse_xyz_ensemble(path: Path):
 def xtb_score(xyz_text, solvent, method, charge, xtb_bin, gfn, uhf, add_gsolv):
     """Run one xtb single-point; return (E_total_Eh, Gsolv_Eh_or_None, status).
 
-    method='alpb'  : total energy from xtbout.json already includes solvation.
-    method='cpcmx' : CPCM-X is a post-SCF correction. VERIFY on your build whether the
-                     json total already includes it. Default: use json total as-is and
-                     ALSO record the parsed Gsolv separately. If your build reports the
-                     GAS total under --cpcmx, pass --cpcmx-add-gsolv to add Gsolv back.
+    Both models put the SOLVATED total energy in xtbout.json 'total energy', so we read it
+    as-is (and also record the parsed Gsolv separately for reference):
+      method='alpb'  : ALPB is self-consistent — solvation is in the SCF total.
+      method='cpcmx' : CPCM-X is post-SCF, but xtb writes res%e_total = dG_solv + E_gas
+                       (xtb src: main.F90:996 -> cpx.F90:108 -> json.F90:160) BEFORE the json
+                       is written, so the json total already includes Gsolv. Do NOT pass
+                       --cpcmx-add-gsolv — that would double-count Gsolv.
     """
     with tempfile.TemporaryDirectory(prefix="xtb_") as td:
         (Path(td) / "conf.xyz").write_text(xyz_text)
@@ -277,8 +279,9 @@ def main(argv=None):
     ap.add_argument("--uhf", type=int, default=0)
     ap.add_argument("--gfn", default="2")
     ap.add_argument("--cpcmx-add-gsolv", action="store_true",
-                    help="add parsed Gsolv to the json total (only if your xtb build "
-                         "reports the GAS total under --cpcmx; verify first)")
+                    help="DEPRECATED/UNNEEDED: xtb's json total under --cpcmx already includes "
+                         "Gsolv (verified in xtb source). Leaving this off is correct; passing "
+                         "it double-counts Gsolv. Kept only for exotic/patched builds.")
     ap.add_argument("--xtb", default="xtb")
     ap.add_argument("--jobs", type=int, default=1, help="parallel xtb workers")
     ap.add_argument("--ewin", type=float, default=None, metavar="KCAL",

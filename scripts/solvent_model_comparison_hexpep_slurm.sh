@@ -32,10 +32,12 @@ conda activate chameleon_crest212
 export OMP_NUM_THREADS=1                 # 1 thread/xtb → run $JOBS single-points in parallel
 JOBS="${SLURM_CPUS_PER_TASK:-20}"
 
-# --- HexPep per-phase ensembles (EDIT if the HPC paths differ) -------------------------
-# hexane: auto-pick the most recent HexPep hexane run just generated
-HEXANE=$(ls -dt results/runs/run_*_0_HexPep/hexane/ensemble.xyz 2>/dev/null | head -1 || true)
-# water: HexPep's existing ensemble (adjust path/filename — it may be aq/full_ensemble.xyz)
+# --- HexPep per-phase ensembles (canonical conformers tree) ----------------------------
+# Both phases live under results/conformers/HexPep/. hexane came from the recent CREST run
+# (ensemble.xyz); water/chcl3 are the earlier full_ensemble.xyz. If hexane isn't in the
+# canonical tree yet, fall back to auto-picking the most recent run_*_0_HexPep.
+HEXANE="results/conformers/HexPep/hexane/ensemble.xyz"
+[ -f "$HEXANE" ] || HEXANE=$(ls -dt results/runs/run_*_0_HexPep/hexane/ensemble.xyz 2>/dev/null | head -1 || true)
 WATER="results/conformers/HexPep/aq/full_ensemble.xyz"
 
 for p in "$HEXANE" "$WATER"; do

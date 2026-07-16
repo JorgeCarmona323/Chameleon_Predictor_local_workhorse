@@ -6,10 +6,19 @@ Compute ML-ready 3D conformational descriptors from completed CREST ensembles.
 Featurizer for the DynamicEnsembleEncoder (see docs/chameleon_model_architecture.md);
 output columns map to the dynamic_features schema (docs/data_schema.md).
 
-Operates directly on the two solvent ensembles — water/ and mem/ — using the
-solvent label as the state assignment (no clustering, no max/min-PSA proxy).
-Per-solvent descriptors are Boltzmann-weighted over the real CREST ensemble;
-cross-solvent descriptors are water − CHCl3 differences.
+Operates directly on two solvent ensembles — water/ plus one apolar leg (chcl3/ or
+hexane/, see --apolar) — using the solvent label as the state assignment (no clustering,
+no max/min-PSA proxy). Per-solvent descriptors are Boltzmann-weighted over the real CREST
+ensemble; cross-solvent descriptors are water − apolar differences (delta_* column names
+stay prefix-free whichever apolar phase is used).
+
+WEIGHTS — pass --energies-csv to weight by the SOLVATED single-point populations from
+free_energy_calculator.py (CPCM-X/ALPB) rather than the raw CREST/GFN2 energies. That is
+the Role-2 -> Role-3 hand-off: geometry from CREST, populations from the solvated scoring.
+Without it, weights are recomputed from the GFN2 energies in ensemble.xyz (CREMP-consistent).
+
+Reads BOTH ensemble layouts: current crest_engine.py (ensemble.sdf + ensemble.xyz +
+metadata.json) and the legacy one (ensemble.sdf + ensemble.json).
 
 Descriptor groups (see docs/descriptor_framework.md): 2 (cis-amide), 3 (ddG),
 5 (Boltzmann polarity), 6 (shape). Witek congruent + kinetic barrier intentionally
@@ -32,8 +41,14 @@ Regime 2 (Hessian/CENSO free-energy reweighting) is deliberately NOT applied her
 would change populations off the CREMP footing; see the literature-review doc.
 
 Usage:
-  python ensemble_descriptors.py --run-dir results/runs/run_..._5_DOPC_R --name DOPC_R
-  python ensemble_descriptors.py --water-dir data/CREST_CsA_20260512 --name CsA_v1
+  # water vs chloroform (default apolar leg), GFN2 weights
+  python ensemble_descriptors.py --run-dir results/conformers/HexPep --name HexPep
+
+  # water vs hexane, weighted by the CPCM-X populations from the scoring run
+  python ensemble_descriptors.py --run-dir results/conformers/HexPep --apolar hexane \
+      --energies-csv results/free_energy/fe_HexPep.csv --name HexPep
+
+  # several compounds into one table
   python ensemble_descriptors.py --run-dir <dir> --name X --run-dir <dir2> --name Y -o out.csv
 """
 
@@ -116,36 +131,135 @@ def total_sasa(mol, conf_id) -> float:
 
 
 # ── ensemble loading ──────────────────────────────────────────────────────────
-def load_ensemble(sdf_path: Path, json_path: Path):
-    """Return dict with mol-per-conformer list, weights, energies, and json psa/hb."""
-    with open(json_path) as f:
-        data = json.load(f)
-    confs = data.get("conformers", [])
-    energies = np.array([c.get("totalenergy", np.nan) for c in confs], dtype=float)
-    weights = np.array([c.get("boltzmannweight", np.nan) for c in confs], dtype=float)
-    if not np.all(np.isfinite(weights)) or weights.sum() <= 0:
-        weights = boltzmann_weights(energies.tolist())
-    psa_json = np.array([c.get("psa", np.nan) for c in confs], dtype=float)
-    hb_json = np.array([c.get("hbonds", np.nan) for c in confs], dtype=float)
+def _energies_from_xyz(xyz_path: Path) -> list[float]:
+    """Per-conformer energies (Hartree) from a multi-frame CREST ensemble.xyz: the first
+    float token on each frame's comment line, as CREST writes it. The current
+    crest_engine.py emits ensemble.xyz (+ metadata.json) and no longer writes the legacy
+    ensemble.json, so this is where energies come from now."""
+    energies: list[float] = []
+    lines = xyz_path.read_text().splitlines()
+    i = 0
+    while i < len(lines):
+        if not lines[i].strip():
+            i += 1
+            continue
+        try:
+            natoms = int(lines[i].split()[0])
+        except (ValueError, IndexError):
+            i += 1
+            continue
+        comment = lines[i + 1] if i + 1 < len(lines) else ""
+        e = float("nan")
+        for tok in comment.replace("=", " ").replace(":", " ").split():
+            try:
+                e = float(tok)
+                break
+            except ValueError:
+                continue
+        energies.append(e)
+        i += 2 + natoms
+    return energies
 
+
+def _pops_from_energy_csv(csv_path: Path, solvent: str, n_conf: int):
+    """Boltzmann populations for ONE solvent leg from free_energy_calculator.py's
+    per-conformer CSV (CPCM-X / ALPB single-points) — the Role-2 -> Role-3 hand-off.
+
+    The CSV's `conf` column holds the ORIGINAL conformer index, and with --ewin only the
+    low-energy subset was scored. We therefore scatter pops back by index over the full
+    ensemble; conformers outside the window keep weight 0, which is what their Boltzmann
+    weight is anyway. Returns None if the CSV can't supply usable weights."""
+    try:
+        df = pd.read_csv(csv_path)
+    except Exception:
+        return None
+    if "solvent" in df.columns:
+        df = df[df["solvent"] == solvent]
+    if df.empty or "pop" not in df.columns or "conf" not in df.columns:
+        return None
+    w = np.zeros(n_conf, dtype=float)
+    idx = df["conf"].to_numpy(dtype=int)
+    pops = df["pop"].to_numpy(dtype=float)
+    ok = (idx >= 0) & (idx < n_conf) & np.isfinite(pops)
+    if not ok.any():
+        return None
+    w[idx[ok]] = pops[ok]
+    return w if w.sum() > 0 else None
+
+
+def load_ensemble(solv_dir: Path, energies_csv: Path | None = None,
+                  solvent_key: str | None = None):
+    """Load one solvent leg: geometry + per-conformer energies + Boltzmann weights.
+
+    Handles BOTH ensemble layouts:
+      * current  (crest_engine.py): ensemble.sdf + ensemble.xyz + metadata.json
+      * legacy:                     ensemble.sdf + ensemble.json (totalenergy/boltzmannweight)
+
+    Weight precedence, highest first:
+      1. `energies_csv` -> free_energy_calculator.py `pop` (CPCM-X/ALPB solvated single-points)
+      2. legacy ensemble.json `boltzmannweight`
+      3. recomputed Boltzmann weights from whatever energies were found (CREST/GFN2)
+    """
+    sdf_path = solv_dir / "ensemble.sdf"
     supplier = Chem.SDMolSupplier(str(sdf_path), removeHs=False, sanitize=True)
     mols = [m for m in supplier if m is not None]
+    n = len(mols)
+    if n == 0:
+        return {"mols": [], "weights": np.array([]), "energies": np.array([]),
+                "psa_json": np.array([]), "hb_json": np.array([]), "smiles": None, "n": 0}
 
-    n = min(len(mols), len(confs))
-    return {
-        "mols": mols[:n],
-        "weights": weights[:n] / weights[:n].sum(),
-        "energies": energies[:n],
-        "psa_json": psa_json[:n],
-        "hb_json": hb_json[:n],
-        "smiles": data.get("smiles"),
-        "n": n,
-    }
+    energies = np.full(n, np.nan)
+    weights = None
+    psa_json = np.full(n, np.nan)
+    hb_json = np.full(n, np.nan)
+    smiles = None
+
+    json_path = solv_dir / "ensemble.json"
+    if json_path.exists():                                   # legacy layout
+        with open(json_path) as f:
+            data = json.load(f)
+        confs = data.get("conformers", [])
+        m = min(n, len(confs))
+        energies[:m] = [confs[i].get("totalenergy", np.nan) for i in range(m)]
+        w = np.array([confs[i].get("boltzmannweight", np.nan) for i in range(m)], dtype=float)
+        if m == n and np.all(np.isfinite(w)) and w.sum() > 0:
+            weights = w
+        psa_json[:m] = [confs[i].get("psa", np.nan) for i in range(m)]
+        hb_json[:m] = [confs[i].get("hbonds", np.nan) for i in range(m)]
+        smiles = data.get("smiles")
+    else:                                                    # current layout
+        xyz_path = solv_dir / "ensemble.xyz"
+        if xyz_path.exists():
+            e = np.asarray(_energies_from_xyz(xyz_path), dtype=float)
+            m = min(n, e.size)
+            energies[:m] = e[:m]
+        meta_path = solv_dir / "metadata.json"
+        if meta_path.exists():
+            try:
+                smiles = json.loads(meta_path.read_text()).get("smiles")
+            except Exception:
+                pass
+
+    # Role-2 solvated populations take precedence when supplied
+    if energies_csv is not None and solvent_key:
+        w_csv = _pops_from_energy_csv(Path(energies_csv), solvent_key, n)
+        if w_csv is not None:
+            weights = w_csv
+
+    if weights is None:
+        weights = np.asarray(boltzmann_weights(energies.tolist()), dtype=float)
+    weights = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    total = weights.sum()
+    weights = weights / total if total > 0 else np.full(n, 1.0 / n)
+
+    return {"mols": mols, "weights": weights, "energies": energies,
+            "psa_json": psa_json, "hb_json": hb_json, "smiles": smiles, "n": n}
 
 
 # ── per-solvent descriptors ───────────────────────────────────────────────────
-def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
-    ens = load_ensemble(sdf_path, json_path)
+def solvent_descriptors(solv_dir: Path, prefix: str, energies_csv: Path | None = None,
+                        solvent_key: str | None = None) -> dict:
+    ens = load_ensemble(solv_dir, energies_csv, solvent_key or prefix)
     mols, w = ens["mols"], ens["weights"]
     if len(mols) == 0:
         return {}
@@ -268,7 +382,11 @@ def solvent_descriptors(sdf_path: Path, json_path: Path, prefix: str) -> dict:
     return out
 
 
-def cross_solvent(water: dict, mem: dict) -> dict:
+def cross_solvent(water: dict, apolar: dict, ap: str = "chcl3") -> dict:
+    """Cross-solvent deltas: water minus the APOLAR leg (`ap` = its folder/column prefix,
+    e.g. chcl3 or hexane). Delta column names stay prefix-free so downstream consumers
+    (reports, notebooks, ml/) keep reading the same schema regardless of which apolar
+    phase was used."""
     out = {}
     pairs = [
         ("delta_psa", "bw_psa"), ("delta_IMHB", "bw_IMHB"), ("delta_rg", "bw_rg"),
@@ -282,25 +400,25 @@ def cross_solvent(water: dict, mem: dict) -> dict:
         ("delta_amphi_moment", "bw_amphi_moment"),
     ]
     for out_key, feat in pairs:
-        wv, mv = water.get(f"water_{feat}"), mem.get(f"mem_{feat}")
+        wv, mv = water.get(f"water_{feat}"), apolar.get(f"{ap}_{feat}")
         if wv is not None and mv is not None:
             out[out_key] = round(wv - mv, 3)
 
     # normalized delta PSA (Yu 2026): ΔPSA / mean total SASA
     if "delta_psa" in out:
         sasa = np.nanmean([water.get("water_sasa_total", np.nan),
-                           mem.get("mem_sasa_total", np.nan)])
+                           apolar.get(f"{ap}_sasa_total", np.nan)])
         if np.isfinite(sasa) and sasa > 0:
             out["norm_delta_psa"] = round(out["delta_psa"] / sasa, 5)
 
     # ddG between dominant conformers across solvents (Hartree → kcal)
-    ew, em = water.get("_water_dom_energy"), mem.get("_mem_dom_energy")
+    ew, em = water.get("_water_dom_energy"), apolar.get(f"_{ap}_dom_energy")
     if ew is not None and em is not None:
         out["ddG_dom_kcal"] = round((ew - em) * 627.509, 2)
 
     # cis-amide switch: which bond changes most between solvents
     cw = water.get("_water_cis_prob_vec")
-    cm = mem.get("_mem_cis_prob_vec")
+    cm = apolar.get(f"_{ap}_cis_prob_vec")
     if cw and cm and len(cw) == len(cm):
         d = np.array(cw) - np.array(cm)
         mag = float(np.max(np.abs(d)))
@@ -316,18 +434,28 @@ def cross_solvent(water: dict, mem: dict) -> dict:
     return out
 
 
-def process_compound(name: str, water_dir: Path | None, mem_dir: Path | None) -> dict:
-    row = {"compound": name}
+def _has_ensemble(d: Path | None) -> bool:
+    """A usable leg = geometry (ensemble.sdf) present. Energies come from ensemble.xyz
+    (current layout) or ensemble.json (legacy); load_ensemble handles either."""
+    return bool(d) and (d / "ensemble.sdf").exists()
+
+
+def process_compound(name: str, water_dir: Path | None, apolar_dir: Path | None,
+                     ap: str = "chcl3", energies_csv: Path | None = None) -> dict:
+    """One compound = the water leg + one apolar leg (`ap`: chcl3 or hexane).
+    If `energies_csv` is given, both legs are Boltzmann-weighted by the solvated
+    single-point populations from free_energy_calculator.py instead of raw GFN2."""
+    row = {"compound": name, "apolar_solvent": ap}
     wd = {}
     md = {}
-    if water_dir and (water_dir / "ensemble.json").exists():
-        wd = solvent_descriptors(water_dir / "ensemble.sdf", water_dir / "ensemble.json", "water")
+    if _has_ensemble(water_dir):
+        wd = solvent_descriptors(water_dir, "water", energies_csv, "water")
         row.update({k: v for k, v in wd.items() if not k.startswith("_")})
-    if mem_dir and (mem_dir / "ensemble.json").exists():
-        md = solvent_descriptors(mem_dir / "ensemble.sdf", mem_dir / "ensemble.json", "mem")
+    if _has_ensemble(apolar_dir):
+        md = solvent_descriptors(apolar_dir, ap, energies_csv, ap)
         row.update({k: v for k, v in md.items() if not k.startswith("_")})
     if wd and md:
-        row.update(cross_solvent(wd, md))
+        row.update(cross_solvent(wd, md, ap))
         row["has_both_solvents"] = 1
     else:
         row["has_both_solvents"] = 0
@@ -338,9 +466,19 @@ def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--run-dir", action="append", default=[],
-                   help="CREST run dir containing water/ and mem/ subdirs")
+                   help="compound dir containing water/ and the apolar leg's subdir "
+                        "(see --apolar). Works on results/conformers/<name>/ or "
+                        "results/runs/run_*/ from crest_v3.2.py.")
     p.add_argument("--water-dir", action="append", default=[],
-                   help="Directory holding a water-only ensemble.{json,sdf}")
+                   help="Directory holding a water-only ensemble (ensemble.sdf [+ .xyz/.json])")
+    p.add_argument("--apolar", default="chcl3",
+                   help="apolar leg's folder name = its column prefix (default: chcl3; "
+                        "use hexane for the hexane transfer phase)")
+    p.add_argument("--energies-csv", type=Path, default=None,
+                   help="free_energy_calculator.py per-conformer CSV. When given, descriptors "
+                        "are Boltzmann-weighted by the SOLVATED (CPCM-X/ALPB) populations from "
+                        "that run instead of the raw CREST/GFN2 energies. Conformers trimmed by "
+                        "--ewin correctly get weight 0.")
     p.add_argument("--name", action="append", default=[], help="Compound name (one per --run-dir/--water-dir)")
     p.add_argument("-o", "--out", default="results/ensemble_descriptors.csv", type=Path)
     return p.parse_args()
@@ -348,19 +486,23 @@ def parse_args():
 
 def main():
     args = parse_args()
+    ap = args.apolar
     jobs = []
     for i, rd in enumerate(args.run_dir):
         nm = args.name[i] if i < len(args.name) else Path(rd).name
-        jobs.append((nm, Path(rd) / "water", Path(rd) / "mem"))
+        jobs.append((nm, Path(rd) / "water", Path(rd) / ap))
     offset = len(args.run_dir)
     for i, wdir in enumerate(args.water_dir):
         nm = args.name[offset + i] if offset + i < len(args.name) else Path(wdir).name
         jobs.append((nm, Path(wdir), None))
 
+    if args.energies_csv:
+        print(f"weighting by solvated populations from: {args.energies_csv}")
+
     rows = []
     for nm, wdir, mdir in jobs:
-        print(f"[{nm}] water={wdir} mem={mdir}")
-        rows.append(process_compound(nm, wdir, mdir))
+        print(f"[{nm}] water={wdir} {ap}={mdir}")
+        rows.append(process_compound(nm, wdir, mdir, ap, args.energies_csv))
 
     df = pd.DataFrame(rows)
     args.out.parent.mkdir(parents=True, exist_ok=True)

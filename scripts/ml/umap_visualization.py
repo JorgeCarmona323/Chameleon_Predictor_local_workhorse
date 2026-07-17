@@ -18,10 +18,13 @@ Track B — UMAP + HDBSCAN (natural signal):
   Noise points (label=-1) are explicitly modeled — not forced into clusters.
   Goal: find permeability islands where data naturally clumps.
 
-Visualization per panel (3 subplots, same UMAP layout):
-  Plot 1 — K-Medoid cluster IDs (medoids marked ★)
-  Plot 2 — HDBSCAN cluster IDs (noise in grey)
-  Plot 3 — PAMPA LogPexp (the clincher)
+Visualization per panel (3 base tracks + optional extra tracks, same UMAP layout):
+  Track A — K-Medoid cluster IDs (medoids marked ★)
+  Track B — HDBSCAN cluster IDs (noise in grey)
+  Clincher — PAMPA LogPexp
+  Track D — Molecular Weight (added when MolWt is a pass-through column)
+  Track E — residue count / Monomer_Length, with the >=9-residue chameleon threshold
+            ringed (added when Monomer_Length is a pass-through column)
 
 Convergence analysis:
   Where K-Medoids and HDBSCAN agree on high-permeability regions
@@ -403,12 +406,16 @@ def make_dual_track_panel(
     else:
         print("\n  No double-validated islands found.")
 
-    # ── Figure: 3 or 4 subplots (4 when MolWt Track D is requested) ──────────
-    has_mw = "MolWt" in sub.columns
-    n_subplots = 4 if has_mw else 3
-    fig_width  = 28 if has_mw else 22
+    # ── Figure: 3 base tracks + optional extra tracks ───────────────────────
+    #   Track D = Molecular Weight (MolWt); Track E = residue count (Monomer_Length).
+    has_mw  = "MolWt" in sub.columns
+    has_len = "Monomer_Length" in sub.columns
+    n_extra    = int(has_mw) + int(has_len)
+    n_subplots = 3 + n_extra
+    fig_width  = 22 + 6 * n_extra
     fig, axes = plt.subplots(1, n_subplots, figsize=(fig_width, 6))
     cycloA_mask = sub["ID"].isin(CYCLOA_IDS).values
+    next_ax = 3   # running index into axes[] for the optional extra tracks
 
     # --- Subplot 1: K-Medoids ---
     ax1 = axes[0]
@@ -480,9 +487,9 @@ def make_dual_track_panel(
     ax3.set_title("The Clincher — PAMPA LogPexp\n(validate cluster chemistry)")
     ax3.set_xlabel("UMAP 1"); ax3.set_ylabel("UMAP 2")
 
-    # --- Subplot 4: Track D — Molecular Weight (optional) ---
+    # --- Subplot: Track D — Molecular Weight (optional) ---
     if has_mw:
-        ax4 = axes[3]
+        ax4 = axes[next_ax]; next_ax += 1
         mw_vals = sub["MolWt"].values
         norm_mw = Normalize(
             vmin=np.percentile(mw_vals, 5),
@@ -520,6 +527,51 @@ def make_dual_track_panel(
         )
         ax4.set_xlabel("UMAP 1"); ax4.set_ylabel("UMAP 2")
 
+    # --- Subplot: Track E — residue count / Monomer_Length (optional) ---
+    # Directly tests the <9 vs >=9 residue hypothesis for the two populations: color the
+    # same blind embedding by chain length and ring the >=9-residue (chameleon-threshold)
+    # compounds. If the permeable lobe is predominantly >=9 residues, the two populations
+    # ARE the size split.
+    if has_len:
+        ax5 = axes[next_ax]; next_ax += 1
+        len_vals = pd.to_numeric(sub["Monomer_Length"], errors="coerce").values.astype(float)
+        finite = np.isfinite(len_vals)
+        norm_len = Normalize(
+            vmin=np.nanpercentile(len_vals[finite], 5) if finite.any() else 0,
+            vmax=np.nanpercentile(len_vals[finite], 95) if finite.any() else 1,
+        )
+        sc_len = ax5.scatter(
+            embedding[:, 0], embedding[:, 1],
+            c=len_vals, cmap=plt.cm.viridis, norm=norm_len,
+            s=8, alpha=0.5, rasterized=True,
+        )
+        plt.colorbar(sc_len, ax=ax5, label="Residue count (Monomer_Length)")
+        big_mask = finite & (len_vals >= 9)          # chameleon size threshold
+        ax5.scatter(
+            embedding[big_mask, 0], embedding[big_mask, 1],
+            s=18, facecolors="none", edgecolors="crimson",
+            linewidths=0.4, alpha=0.35, zorder=5,
+            label=f"≥9 residues (n={int(big_mask.sum())})",
+        )
+        if cycloA_mask.sum() > 0:
+            ax5.scatter(
+                embedding[cycloA_mask, 0], embedding[cycloA_mask, 1],
+                s=150, marker="*", c="black", zorder=10,
+                edgecolors="white", linewidths=0.8,
+                label=f"CycloA (n={cycloA_mask.sum()})",
+            )
+        ax5.legend(fontsize=7, loc="upper right")
+        perm_mask = y_bin.astype(bool)
+        med_len_perm   = np.nanmedian(len_vals[perm_mask])
+        med_len_imperm = np.nanmedian(len_vals[~perm_mask])
+        pct_ge9_perm   = 100 * np.nanmean((len_vals[perm_mask] >= 9).astype(float))
+        ax5.set_title(
+            f"Track E — Residue count\n"
+            f"Med permeable={med_len_perm:.0f}  |  impermeable={med_len_imperm:.0f}  "
+            f"|  {pct_ge9_perm:.0f}% of permeable ≥9"
+        )
+        ax5.set_xlabel("UMAP 1"); ax5.set_ylabel("UMAP 2")
+
     n_label = f"{len(sub):,}".replace(",", "")
     fig.suptitle(
         f"{panel_name}  (n={len(sub):,})  |  "
@@ -533,7 +585,9 @@ def make_dual_track_panel(
     print(f"\n  Figure saved: {fig_path}")
 
     # ── Save per-compound embedding + cluster labels ─────────────────────────
-    save_cols = ["ID", "PAMPA", "permeable"] + (["MolWt"] if has_mw else [])
+    save_cols = (["ID", "PAMPA", "permeable"]
+                 + (["MolWt"] if has_mw else [])
+                 + (["Monomer_Length"] if has_len else []))
     sub_out = sub[save_cols].copy()
     sub_out["embedding_x"]      = embedding[:, 0]
     sub_out["embedding_y"]      = embedding[:, 1]
@@ -586,7 +640,7 @@ def run(matrix_csv: str, outdir: Path, n_kmedoids: int,
     for panel_name, features in active_panels.items():
         result = make_dual_track_panel(
             df, panel_name, features, outdir, n_kmedoids,
-            extra_cols=["MolWt"],
+            extra_cols=["MolWt", "Monomer_Length"],
         )
         if result:
             summary_rows.append(result)

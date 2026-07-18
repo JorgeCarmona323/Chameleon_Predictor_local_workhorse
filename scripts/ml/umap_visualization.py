@@ -277,6 +277,10 @@ def check_umap_stability(X_red: np.ndarray, outdir: Path, panel_name: str) -> fl
     return min_ari
 
 
+# Output image format(s) for the panel figures; overridden by --format in main.
+OUTPUT_FORMATS = ["png"]
+
+
 # ── Main panel function ────────────────────────────────────────────────────────
 
 def make_dual_track_panel(
@@ -434,8 +438,9 @@ def make_dual_track_panel(
             s=200, marker="*", c="black", zorder=10,
             edgecolors="white", linewidths=0.8, label="Medoids",
         )
-    sil_str = f"sil={sil_km:.3f}" if not np.isnan(sil_km) else ""
-    ax1.set_title(f"Track A — K-Medoids (k={n_kmedoids})\n{sil_str}")
+    # cluster-validity stats intentionally omitted from the panel subhead — UMAP here is a
+    # visual argument, not a statistical clustering claim (sil/DBCV still saved to the CSVs).
+    ax1.set_title(f"Track A — K-Medoids (k={n_kmedoids})")
     ax1.set_xlabel("UMAP 1"); ax1.set_ylabel("UMAP 2")
     ax1.legend(fontsize=6, ncol=2, loc="upper right")
 
@@ -458,9 +463,8 @@ def make_dual_track_panel(
                 c=[cmap_hdb(int(lab) % 20)], s=8, alpha=0.6, rasterized=True,
                 label=f"C{lab} n={mask.sum()} ({pct_perm:.0f}%)",
             )
-    dbcv_str = f"DBCV={dbcv_hdb:.3f}" if not np.isnan(dbcv_hdb) else ""
     n_hdb_clusters = len(unique_hdb) - (1 if -1 in unique_hdb else 0)
-    ax2.set_title(f"Track B — HDBSCAN ({n_hdb_clusters} clusters)\n{dbcv_str}")
+    ax2.set_title(f"Track B — HDBSCAN ({n_hdb_clusters} clusters)")
     ax2.set_xlabel("UMAP 1"); ax2.set_ylabel("UMAP 2")
     ax2.legend(fontsize=6, ncol=2, loc="upper right")
 
@@ -579,10 +583,11 @@ def make_dual_track_panel(
         fontsize=11, fontweight="bold",
     )
     plt.tight_layout()
-    fig_path = outdir / "figures" / f"{panel_name}_umap_{n_label}.png"
-    plt.savefig(fig_path, dpi=150, bbox_inches="tight")
+    for _fmt in OUTPUT_FORMATS:
+        fig_path = outdir / "figures" / f"{panel_name}_umap_{n_label}.{_fmt}"
+        plt.savefig(fig_path, dpi=150, bbox_inches="tight")
+        print(f"\n  Figure saved: {fig_path}")
     plt.close()
-    print(f"\n  Figure saved: {fig_path}")
 
     # ── Save per-compound embedding + cluster labels ─────────────────────────
     save_cols = (["ID", "PAMPA", "permeable"]
@@ -663,10 +668,14 @@ def parse_args() -> argparse.Namespace:
                         help="Filter to these Source values (e.g. 2016_Furukawa 2013_CHUGAI)")
     parser.add_argument("--panels",  "-p", nargs="+", default=None,
                         help="Run only these panels (e.g. Panel_C_combined)")
+    parser.add_argument("--format",  "-f", nargs="+", default=["png"],
+                        choices=["png", "svg", "pdf"],
+                        help="Figure output format(s), e.g. --format svg  or  --format png svg")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
+    OUTPUT_FORMATS = args.format
     run(args.matrix, Path(args.outdir), args.k,
         sources=args.sources, panels=args.panels)

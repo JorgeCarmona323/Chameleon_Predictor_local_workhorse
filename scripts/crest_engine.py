@@ -47,7 +47,24 @@ SOLVENT_PAIRS_DEFAULT: list[tuple[str, str]] = [
     ("hexane",  "hexane"),       # folder: hexane, solvent keyword: hexane
 ]
 
-SOURCE_TAG = "CREST GFN2-xTB ALPB"
+# Level of theory for CREST + the xtb pre-opt. "2"/"1"/"0" = GFN-n semi-empirical;
+# "ff" = GFN-FF force field (much faster, lower accuracy). Set from the CLI (crest_v3.2.py).
+GFN_METHOD = "2"
+
+
+def _crest_gfn_flag() -> str:
+    """CREST method flag, matching CREST's spelling: --gfn2 / --gfn1 / --gfnff."""
+    return f"--gfn{GFN_METHOD}"
+
+
+def _xtb_gfn_flags() -> list[str]:
+    """xtb method flags for the pre-opt: ['--gfnff'] or ['--gfn', '2']."""
+    return ["--gfnff"] if GFN_METHOD == "ff" else ["--gfn", GFN_METHOD]
+
+
+def _source_tag() -> str:
+    method = "GFN-FF" if GFN_METHOD == "ff" else f"GFN{GFN_METHOD}-xTB"
+    return f"CREST {method} ALPB"
 
 
 def _log(msg: str) -> None:
@@ -298,7 +315,7 @@ def _xtb_opt_worker(args):
     if xtb_exe is None:
         return None
 
-    cmd = [xtb_exe, "conf.xyz", "--opt", "--gfn", "2", "--chrg", str(charge)]
+    cmd = [xtb_exe, "conf.xyz", "--opt", *_xtb_gfn_flags(), "--chrg", str(charge)]
     if solvent:
         model = "gbsa" if solvent.lower() == "methanol" else "alpb"
         cmd.extend([f"--{model}", solvent])
@@ -400,7 +417,7 @@ def run_crest(xyz_path: Path, work_dir: Path, solvent: str,
     cmd = [
         "crest", str(xyz_path),
         "-T",      str(n_threads),
-        "--gfn2",
+        _crest_gfn_flag(),
         "--chrg",  str(charge),
         "--alpb",  solvent,
         "--keepdir",
@@ -449,7 +466,7 @@ def run_crest_cregen(xyz_path: Path, work_dir: Path, solvent: str,
         "crest", str(xyz_path.resolve()),
         "--cregen",
         "-T",     str(n_threads),
-        "--gfn2",
+        _crest_gfn_flag(),
         "--chrg", str(charge),
         "--alpb", solvent,
     ]
@@ -570,7 +587,7 @@ def write_metadata(path: Path, *, smiles: str, name: str, charge: int,
             "solvent":      solvent,
             "label":        label,
             "n_conformers": n_conformers,
-            "source":       SOURCE_TAG,
+            "source":       _source_tag(),
         }, f, indent=2)
 
 

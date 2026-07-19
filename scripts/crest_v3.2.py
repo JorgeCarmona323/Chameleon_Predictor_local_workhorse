@@ -407,11 +407,16 @@ def parse_args() -> argparse.Namespace:
                              "Comma-separated; each is a bare solvent name (folder = solvent) or "
                              "LABEL=SOLVENT to name the folder differently. SOLVENT is the "
                              "xtb/CREST --alpb keyword.")
+    parser.add_argument("--gfn", choices=["2", "1", "0", "ff"], default="2",
+                        help="Level of theory for CREST + xtb pre-opt: 2/1/0 = GFN-n semi-empirical "
+                             "(default 2); ff = GFN-FF force field (much faster, lower accuracy).")
     return parser.parse_args()
 
 
 if __name__ == "__main__":
+    import crest_engine
     args = parse_args()
+    crest_engine.GFN_METHOD = args.gfn      # switches CREST (--gfnN/--gfnff) + xtb pre-opt
     run(
         Path(args.outdir),
         max_confs     = args.max_confs,

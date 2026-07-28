@@ -45,7 +45,7 @@ WAT=$(latest_leg "$idx" water)
 charge=$(grep -oE '"charge"[^0-9-]*(-?[0-9]+)' "$(dirname "$HEX")/metadata.json" 2>/dev/null \
          | grep -oE '\-?[0-9]+$' || true); charge="${charge:-0}"
 
-label=$(basename "$(dirname "$HEX")" | cut -d_ -f4-)   # e.g. 20_1-6-4-7_xylene
+label=$(basename "$(dirname "$(dirname "$HEX")")" | cut -d_ -f4-)   # run dir -> e.g. 20_1-6-4-7_xylene
 echo "idx=$idx  label=$label  charge=$charge"
 echo "  water  = $WAT"
 echo "  hexane = $HEX"

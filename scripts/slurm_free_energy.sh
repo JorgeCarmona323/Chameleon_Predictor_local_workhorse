@@ -48,6 +48,13 @@ echo
 for hexdir in "${HEXDIRS[@]}"; do
     cdir=$(dirname "$hexdir")            # the compound directory
 
+    # skip compounds scored elsewhere (CsA has its own GFN-FF wrapper; HexPep/validation
+    # compounds use their own aq/-named legs) so this batch stays to the project hits.
+    case "$hexdir" in
+        *[Cc]yclosporin*|*_CsA*|*HexPep*|*Roxithromycin*|*Begnini*)
+            echo "skip (handled separately): $hexdir"; continue ;;
+    esac
+
     # label from the hexane manifest filename (e.g. DOPCdz_R_manifest.json -> DOPCdz_R)
     manifest=$(find "$hexdir" -maxdepth 1 -name '*_manifest.json' | head -1)
     if [ -n "$manifest" ]; then

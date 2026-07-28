@@ -320,6 +320,15 @@ REFERENCE_COMPOUNDS = [
         "source": "Hu lab — Brain 6-4-4-13 + CF3-diazirine (N=N auto-constrained)",
         "pampa": None, "permeable": True, "hbd": None,
     },
+    # ── NMR pipeline-validation compounds (not project hits) ───────────────────────
+    {
+        "name": "Roxithromycin",
+        "short": "Roxithromycin",
+        "cycpeptmpdb_id": None,
+        "smiles": "CC[C@@H]1[C@@]([C@@H]([C@H](/C(=N/OCOCCOC)/[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O",
+        "source": "Poongavanam ACS Omega 2018 — 14-membered macrolide; solution NAMFIS populations in CDCl3 + D2O (medium pipeline validation)",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
 ]
 
 

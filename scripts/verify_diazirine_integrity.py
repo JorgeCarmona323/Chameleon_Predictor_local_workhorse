@@ -172,9 +172,21 @@ def _jobs(args):
     if args.run_dir:
         return [(args.name[i] if i < len(args.name) else Path(rd).name, Path(rd))
                 for i, rd in enumerate(args.run_dir)]
+    jobs = []
     base = Path("results/conformers")
-    return [(p.name, p) for p in sorted(base.glob("*Diazirine*"))
-            if (p / "water").exists() or (p / "mem").exists()]
+    if base.exists():
+        jobs += [(p.name, p) for p in sorted(base.glob("*Diazirine*"))
+                 if (p / "water").exists() or (p / "mem").exists()]
+    # also auto-scan the raw run dirs (this is where hexane ensembles live)
+    runs = Path("results/runs")
+    if runs.exists():
+        for p in sorted(runs.glob("run_*")):
+            nm = p.name.lower()
+            if ("dz" in nm or "diazirine" in nm) and any(
+                    (p / s).exists() for s in ("water", "mem", "hexane")):
+                label = "_".join(p.name.split("_")[3:]) or p.name
+                jobs.append((label, p))
+    return jobs
 
 
 def main():
@@ -192,7 +204,7 @@ def main():
 
     rows = []
     for name, rdir in jobs:
-        for solvent in ("water", "mem"):
+        for solvent in ("water", "mem", "hexane"):
             sdf, jsonp = rdir / solvent / "ensemble.sdf", rdir / solvent / "ensemble.json"
             if not sdf.exists():
                 continue

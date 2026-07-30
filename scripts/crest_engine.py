@@ -268,6 +268,11 @@ def _write_conformer_xyz(mol, conf_id: int, xyz_path: Path,
 #    per molecule and gated by `use_diazirine_constraint`; a no-op when absent.
 DIAZIRINE_SMARTS = "[#6]1[#7]=[#7]1"
 DIAZIRINE_NN = 1.23   # Å; constrain target (literature 1.228–1.230)
+# N=N restraint force constant (Eh/Bohr^2). A static xtb --opt holds 1.23 Å fine even at 0.25, but
+# that let the N=N drift/freeze at ~1.318 Å during CREST METADYNAMICS (high-T MD), which is where
+# the artifact actually enters. Bumped 0.25 -> 1.0; env-tunable (DIAZIRINE_FC=...) to test values.
+import os as _os
+DIAZIRINE_FC = float(_os.environ.get("DIAZIRINE_FC", "1.0"))
 
 
 def diazirine_nn_atoms(mol):
@@ -281,14 +286,14 @@ def diazirine_nn_atoms(mol):
 
 
 def write_constraint_file(path: Path, nn_pair, value: float = DIAZIRINE_NN,
-                          fc: float = 0.25) -> Path:
+                          fc: float = DIAZIRINE_FC) -> Path:
     """Write an xtb/CREST $constrain file pinning the diazirine N=N distance (Fix 1).
     Used for both the xTB pre-opt (--input) and the CREST search (--cinp).
 
-    force constant = 0.25 Eh/Bohr^2 — the CREST-documented value for DISTANCE constraints
-    (https://crest-lab.github.io/crest-docs/page/examples/example_4.html#constrained-sampling;
-    the docs caution against high values). At r0=1.23 Å this is a ~20 kcal/mol barrier vs the
-    1.43 Å drift. Escalate to 0.5 → 1.0 only if the integrity check shows WATCH/FAIL drift.
+    force constant default = DIAZIRINE_FC (env-tunable). CREST docs suggest 0.25 for DISTANCE
+    constraints (example_4), and a static xtb --opt holds 1.23 Å fine at 0.25 — but that value let
+    the N=N drift/freeze at ~1.318 Å during CREST METADYNAMICS (the high-T MD is where it enters),
+    so the default is bumped to 1.0. Set DIAZIRINE_FC=... to test other values in the MTD regime.
     No $metadyn block / reference file is needed for a distance constraint (those are only for
     substructure fixing = Fix 2)."""
     n1, n2 = nn_pair

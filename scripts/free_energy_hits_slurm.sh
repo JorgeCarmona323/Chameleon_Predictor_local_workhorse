@@ -22,10 +22,13 @@ source scripts/env.sh                    # conda env + CPCM-X-enabled xtb-dist
 export OMP_NUM_THREADS=1
 JOBS="${SLURM_CPUS_PER_TASK:-20}"
 
-# 14 hits. DOPC-series diazirines use the N=N-CONSTRAINED v2 indices (16-19) instead of the
-# broken unconstrained originals (12-15): 12->16, 13->17, 14->18, 15->19. Their constrained
-# water/mem exist (Jun 16); hexane comes from crest_hexane_diazirine_v2_slurm.sh.
-INDICES=(20 21 22 23 7 24 5 6 16 17 10 11 18 19)
+# 14 hits, same indices/order as crest_hexane_array_slurm.sh.
+# NOTE (2026-07-28): the diazirine integrity check proved 12/13/14 have a distorted N=N
+# (1.43/1.318 A vs 1.23) in >=1 leg, AND the v2 reruns (16-19) are ALSO broken (water 1.318)
+# -> v2 is NOT a valid substitute. 24 is broken too (both legs ~1.319, ΔG cancelled to a
+# plausible -2.80 mirage). Trustworthy diazirines: 15, 21, 23 only. 12/13/14/24 need a
+# WORKING constrained regen (stronger force constant) before their ΔG can be believed.
+INDICES=(20 21 22 23 7 24 5 6 12 13 10 11 14 15)
 idx="${INDICES[$SLURM_ARRAY_TASK_ID]}"
 
 # latest results/runs/run_*_<idx>_*/<solvent>/ensemble.xyz  (idx = field 4 of the run dir)

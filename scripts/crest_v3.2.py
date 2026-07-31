@@ -329,6 +329,27 @@ REFERENCE_COMPOUNDS = [
         "source": "Poongavanam ACS Omega 2018 — 14-membered macrolide; solution NAMFIS populations in CDCl3 + D2O (medium pipeline validation)",
         "pampa": None, "permeable": True, "hbd": None,
     },
+    # Begnini 6-mer diastereomers (Begnini/Lokey-lineage cyclic hexapeptides; xylene-stapled
+    # Cys-Ser-Pro scaffold). SMILES reconstructed + verified this session against ref22 CSV
+    # (formula C22H27N3O7S, M=477.157) and CIP/InChIKey. Begnini 1 = ref22 #9 (Cys S, Ser R,
+    # most permeable), InChIKey OBXXEQQOFONXEZ-KURKYZTESA-N; Begnini 2 = ref22 #8 (Cys R, Ser R),
+    # InChIKey OBXXEQQOFONXEZ-SQNIBIBYSA-N. 6-mer end of the NMR-validation size range.
+    {
+        "name": "Begnini_1",
+        "short": "Begnini_1",
+        "cycpeptmpdb_id": None,
+        "smiles": "O=C1N[C@@H](C(OC)=O)CSCC(C=CC=C2)=C2C(OC[C@H]1NC([C@@H]3CCCN3C(C)=O)=O)=O",
+        "source": "Begnini/Lokey cyclic hexapeptide (ref22 #9; Cys S, Ser R; most permeable) — NMR pipeline validation (6-mer)",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
+    {
+        "name": "Begnini_2",
+        "short": "Begnini_2",
+        "cycpeptmpdb_id": None,
+        "smiles": "O=C1N[C@H](C(OC)=O)CSCC(C=CC=C2)=C2C(OC[C@H]1NC([C@@H]3CCCN3C(C)=O)=O)=O",
+        "source": "Begnini/Lokey cyclic hexapeptide (ref22 #8; Cys R, Ser R) — NMR pipeline validation (6-mer)",
+        "pampa": None, "permeable": True, "hbd": None,
+    },
 ]
 
 

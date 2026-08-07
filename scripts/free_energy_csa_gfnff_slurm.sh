@@ -39,18 +39,21 @@ echo "CsA GFN-FF dir: $CSA_DIR"
 
 WATER="$CSA_DIR/water/ensemble.xyz"
 HEXANE="$CSA_DIR/hexane/ensemble.xyz"
-for p in "$WATER" "$HEXANE"; do
+CHCL3="$CSA_DIR/chcl3/ensemble.xyz"
+for p in "$WATER" "$HEXANE" "$CHCL3"; do
     [ -f "$p" ] || { echo "MISSING ensemble: $p" >&2; exit 1; }
 done
-echo "water  = $WATER"
-echo "hexane = $HEXANE"
+echo "water      = $WATER"
+echo "chloroform = $CHCL3"
+echo "hexane     = $HEXANE"
 
+# both partition legs: water->chloroform AND water->hexane (CPCM-X single-points are cheap)
 python scripts/free_energy_calculator.py \
     --method cpcmx --ewin 8 --ref water --charge 0 --jobs "$JOBS" \
     --leg "water=$WATER" \
+    --leg "chloroform=$CHCL3" \
     --leg "hexane=$HEXANE" \
     --out "results/free_energy/csa_gfnff_cpcmx.csv"
 
 echo
-echo "Done. ΔG_transfer(water -> hexane) in results/free_energy/csa_gfnff_cpcmx.summary.csv"
-echo "(chcl3 ensemble is also present at $CSA_DIR/chcl3/ if you want the water->chcl3 leg too.)"
+echo "Done. ΔG_transfer(water->chloroform) and (water->hexane) in results/free_energy/csa_gfnff_cpcmx.summary.csv"

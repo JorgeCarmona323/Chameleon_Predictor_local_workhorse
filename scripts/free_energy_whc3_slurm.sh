@@ -19,12 +19,15 @@ source scripts/env.sh
 export OMP_NUM_THREADS=1
 JOBS="${SLURM_CPUS_PER_TASK:-20}"
 
-# newest WhC3 run dir (falls back to organized conformers/ if present)
+# Pick the newest WhC3 source that has the COMPLETE fresh set (a hexane leg). The old WhC3 run
+# has only water + 'mem' (no hexane), so requiring hexane deterministically selects the regen —
+# no reliance on timestamps or naming. Searches organized conformers/ first, then raw run dirs.
 BASE=""
-[ -d "results/conformers/WhC3" ] && BASE="results/conformers/WhC3"
-[ -z "$BASE" ] && BASE=$(ls -dt results/runs/run_*_WhC3 2>/dev/null | head -1)
-[ -n "$BASE" ] || { echo "ERROR: no WhC3 directory found" >&2; exit 1; }
-echo "WhC3 base dir: $BASE"
+for d in results/conformers/WhC3 $(ls -dt results/runs/run_*_WhC3 2>/dev/null); do
+    [ -f "$d/water/ensemble.xyz" ] && [ -f "$d/hexane/ensemble.xyz" ] && { BASE="$d"; break; }
+done
+[ -n "$BASE" ] || { echo "ERROR: no WhC3 dir with a complete water+hexane set found — has the remake finished? (run crest_whc3_slurm.sh first)" >&2; exit 1; }
+echo "WhC3 base dir (complete set): $BASE"
 
 # find each leg (chloroform folder may be 'chloroform', 'chcl3', or the old 'mem')
 find_leg() { local d; for d in "$@"; do [ -f "$BASE/$d/ensemble.xyz" ] && { echo "$BASE/$d/ensemble.xyz"; return; }; done; }

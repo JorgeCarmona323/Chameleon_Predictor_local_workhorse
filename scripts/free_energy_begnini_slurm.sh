@@ -25,12 +25,12 @@ JOBS="${SLURM_CPUS_PER_TASK:-20}"
 MOLS=(Begnini_1 Begnini_2)
 MOL="${MOLS[$SLURM_ARRAY_TASK_ID]}"
 
-# base dir: prefer the organized results/conformers/<MOL>, else the newest raw run dir
-BASE=""
-[ -d "results/conformers/$MOL" ] && BASE="results/conformers/$MOL"
-[ -z "$BASE" ] && BASE=$(ls -dt results/runs/run_*_"$MOL" 2>/dev/null | head -1)
-[ -n "$BASE" ] || { echo "ERROR: no directory found for $MOL" >&2; exit 1; }
-echo "$MOL base dir: $BASE"
+# Default: the <MOL> solvent-data folder with the LATEST timestamp (newest wins — simple &
+# reproducible). Override a molecule explicitly via <MOL>_DIR, e.g. Begnini_1_DIR=<path>.
+ovr="${MOL}_DIR"; BASE="${!ovr:-}"
+[ -z "$BASE" ] && BASE=$(ls -dt -d "results/conformers/$MOL" results/runs/run_*_"$MOL" 2>/dev/null | head -1)
+[ -n "$BASE" ] || { echo "ERROR: no directory found for $MOL (set ${MOL}_DIR=<dir> to override)" >&2; exit 1; }
+echo "$MOL base dir (latest timestamp): $BASE"
 
 # find each leg's ensemble (the chloroform folder may be named 'chloroform' or 'chcl3')
 find_leg() { local d; for d in "$@"; do [ -f "$BASE/$d/ensemble.xyz" ] && { echo "$BASE/$d/ensemble.xyz"; return; }; done; }

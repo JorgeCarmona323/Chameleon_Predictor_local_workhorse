@@ -19,15 +19,14 @@ source scripts/env.sh
 export OMP_NUM_THREADS=1
 JOBS="${SLURM_CPUS_PER_TASK:-20}"
 
-# Pick the newest WhC3 source that has the COMPLETE fresh set (a hexane leg). The old WhC3 run
-# has only water + 'mem' (no hexane), so requiring hexane deterministically selects the regen —
-# no reliance on timestamps or naming. Searches organized conformers/ first, then raw run dirs.
-BASE=""
-for d in results/conformers/WhC3 $(ls -dt results/runs/run_*_WhC3 2>/dev/null); do
-    [ -f "$d/water/ensemble.xyz" ] && [ -f "$d/hexane/ensemble.xyz" ] && { BASE="$d"; break; }
-done
-[ -n "$BASE" ] || { echo "ERROR: no WhC3 dir with a complete water+hexane set found — has the remake finished? (run crest_whc3_slurm.sh first)" >&2; exit 1; }
-echo "WhC3 base dir (complete set): $BASE"
+# Default: the WhC3 solvent-data folder with the LATEST timestamp (newest run wins — a simple,
+# predictable, reproducible rule). To pin a specific folder instead, the user sets it EXPLICITLY:
+#   WHC3_DIR=results/runs/run_..._WhC3 sbatch scripts/free_energy_whc3_slurm.sh
+# We deliberately do NOT auto-guess by folder contents — that trades predictability for magic.
+BASE="${WHC3_DIR:-}"
+[ -z "$BASE" ] && BASE=$(ls -dt -d results/runs/run_*_WhC3 results/conformers/WhC3 2>/dev/null | head -1)
+[ -n "$BASE" ] || { echo "ERROR: no WhC3 folder found (run crest_whc3_slurm.sh first, or set WHC3_DIR=<dir>)" >&2; exit 1; }
+echo "WhC3 base dir (latest timestamp): $BASE"
 
 # find each leg (chloroform folder may be 'chloroform', 'chcl3', or the old 'mem')
 find_leg() { local d; for d in "$@"; do [ -f "$BASE/$d/ensemble.xyz" ] && { echo "$BASE/$d/ensemble.xyz"; return; }; done; }

@@ -305,6 +305,16 @@ def main(argv=None):
     if args.ref not in legs:
         sys.exit(f"error: --ref '{args.ref}' has no matching --leg")
 
+    # provenance: log exactly where each leg's 3D coordinates come from, and the common parent
+    # directory that holds the solvent folders (or note when legs span different parents).
+    print("coordinate sources:", file=sys.stderr)
+    for solv, p in legs.items():
+        print(f"  {solv:>12s} <- {p.resolve()}", file=sys.stderr)
+    _parents = {str(legs[s].resolve().parent.parent) for s in legs}
+    source_dir = (next(iter(_parents)) if len(_parents) == 1
+                  else "multiple: " + "; ".join(sorted(_parents)))
+    print(f"  source_dir  = {source_dir}", file=sys.stderr)
+
     methods = ["cpcmx", "alpb"] if args.compare else [args.method]
 
     all_rows, G = [], {}     # G[(method, solvent)] = ensemble free energy (kcal)
@@ -324,7 +334,7 @@ def main(argv=None):
 
     summaries = []
     for method in methods:
-        s = {"method": method, "ref_solvent": args.ref}
+        s = {"method": method, "ref_solvent": args.ref, "source_dir": source_dir}
         for solv in legs:
             s[f"Gens_{solv}_kcal"] = G[(method, solv)]
             s[f"n_{solv}"] = sum(1 for r in all_rows
@@ -333,6 +343,8 @@ def main(argv=None):
                 gr, gs = G[(method, args.ref)], G[(method, solv)]
                 s[f"dGtransfer_{args.ref}->{solv}_kcal"] = (
                     None if gr is None or gs is None else gs - gr)
+        for solv in legs:                       # per-leg coordinate source, at the end
+            s[f"src_{solv}"] = str(legs[solv].resolve())
         summaries.append(s)
 
     keys = []

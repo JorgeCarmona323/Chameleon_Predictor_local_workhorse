@@ -111,6 +111,9 @@ def main(argv=None):
     src.add_argument("--run-dir", help="skip stage 1; use this existing ensemble dir (water/ + apolar/)")
     ap.add_argument("--name", help="compound label (default: registry short name, or 'molecule')")
     ap.add_argument("--charge", type=int, default=None, help="formal charge (default: auto)")
+    ap.add_argument("--gfn", default="2", choices=["2", "1", "0", "ff"],
+                    help="stage-1 CREST level of theory: 2/1/0 = GFN-n, ff = GFN-FF (fast, for "
+                         "large flexible macrocycles). Stage-2 scoring stays GFN2/CPCM-X regardless.")
     ap.add_argument("--method", default="cpcmx", choices=["cpcmx", "alpb"], help="stage-2 solvation model")
     ap.add_argument("--ewin", type=float, default=8.0, help="stage-2 energy-window pre-trim (kcal/mol)")
     ap.add_argument("--threads", type=int, default=None, help="CPU threads for CREST/xtb (default: all)")
@@ -135,7 +138,8 @@ def main(argv=None):
         if not smiles:
             sys.exit("error: provide --smiles (with --name) or --compound, or --run-dir to skip generation")
         import crest_engine as ce
-        print(f"[stage 1] CREST generation for {name} -> {args.outdir}")
+        ce.GFN_METHOD = args.gfn      # 2/1/0/ff — level of theory for CREST + xtb pre-opt
+        print(f"[stage 1] CREST generation for {name} (GFN{'-FF' if args.gfn=='ff' else args.gfn}) -> {args.outdir}")
         res = ce.generate_conformers(smiles, name=name, outdir=args.outdir,
                                      charge=args.charge, n_threads=args.threads,
                                      max_confs=args.max_confs)

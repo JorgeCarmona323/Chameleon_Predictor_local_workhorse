@@ -1,0 +1,23 @@
+# Chameleon pipeline -- conda environment.
+#
+#   conda env create -f environment.yml
+#   conda activate chameleon_pipeline
+#   bash setup_xtb.sh          # then install the CPCM-X-enabled xtb (see note)
+#   source env.sh              # put xtb + the env on PATH
+#   python check_install.py    # confirm everything is ready
+#
+# NOTE ON xtb: the conda-forge `xtb` is built WITHOUT the CPCM-X solvation library that the
+# energy stage needs ("CPCM-X library was not included in this version of xTB"). `crest` below
+# brings its own xtb for conformer sampling, but for scoring we use the official grimme-lab
+# release ("xtb-dist"), installed by setup_xtb.sh and put first on PATH by env.sh.
+name: chameleon_pipeline
+channels:
+  - conda-forge
+dependencies:
+  - python>=3.9
+  - rdkit
+  - numpy
+  - pandas
+  - crest          # conformer sampling (GFN2 / GFN-FF iMTD-GC)
+  - wget           # setup_xtb.sh downloads the xtb-dist release
+  - xz             # setup_xtb.sh extracts the .tar.xz

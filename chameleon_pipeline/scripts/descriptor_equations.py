@@ -1,6 +1,6 @@
 # env: chameleon-calc
 """
-phys_descriptors_v3.py
+descriptor_equations.py
 ----------------------
 3D physics-based descriptors for cyclic peptide conformer ensembles — v3.
 

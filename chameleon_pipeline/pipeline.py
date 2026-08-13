@@ -6,7 +6,8 @@ stage's output to the next:
 
   Stage 1  CREST conformer generation      scripts/crest_engine.generate_conformers()
   Stage 2  CPCM-X dG_transfer energies      scripts/free_energy_calculator.py
-  Stage 3  3D physics descriptors           scripts/ensemble_descriptors.py
+  Stage 3  3D physics descriptors           scripts/descriptors_calculator.py
+           (imports the descriptor equations from scripts/descriptor_equations.py)
            (Boltzmann-weighted by the stage-2 SOLVATED populations -- geometry from CREST,
             populations from the solvated single-points)
 
@@ -192,7 +193,7 @@ def main(argv=None):
         if out.exists() and not args.force:
             print(f"[stage 3/{folder}] skipped -- {out} exists")
         else:
-            run_step([sys.executable, str(SCRIPTS / "ensemble_descriptors.py"),
+            run_step([sys.executable, str(SCRIPTS / "descriptors_calculator.py"),
                       "--run-dir", str(work), "--apolar", folder, "--name", name,
                       "--energies-csv", str(fe_csv), "-o", str(out)],
                      f"Stage 3 -- 3D descriptors (water vs {folder})")

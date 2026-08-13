@@ -22,8 +22,8 @@ One command runs all three: **`python pipeline.py --smiles "…" --name Foo`**.
 | `pipeline.py` | the wrapper — chains the three stages, one command |
 | `scripts/crest_engine.py` | **stage 1** — SMILES → RDKit embed → xTB pre-opt → CREST ensembles per solvent |
 | `scripts/free_energy_calculator.py` | **stage 2** — CPCM-X (or ALPB) single-points → ΔG_transfer + per-conformer energies |
-| `scripts/ensemble_descriptors.py` | **stage 3** — 3D descriptors, Boltzmann-weighted by the stage-2 populations |
-| `scripts/phys_descriptors_v3.py` | the descriptor *library* stage 3 imports (the PSA/Rg/IMHB/SASA math) — not run directly |
+| `scripts/descriptors_calculator.py` | **stage 3** — 3D descriptors, Boltzmann-weighted by the stage-2 populations |
+| `scripts/descriptor_equations.py` | the "equation sheet" — the PSA/Rg/IMHB/SASA math `descriptors_calculator.py` imports (not run directly) |
 | `environment.yml` · `setup_xtb.sh` · `env.sh` | the runtime (see Install) |
 | `check_install.py` | verifies everything is present, incl. the CPCM-X build |
 

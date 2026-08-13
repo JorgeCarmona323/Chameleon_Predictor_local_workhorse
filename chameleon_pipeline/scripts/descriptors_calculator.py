@@ -1,6 +1,6 @@
 # env: chameleon-calc
 """
-ensemble_descriptors.py
+descriptors_calculator.py
 -----------------------
 Compute ML-ready 3D conformational descriptors from completed CREST ensembles.
 Featurizer for the DynamicEnsembleEncoder (see docs/chameleon_model_architecture.md);
@@ -29,7 +29,7 @@ Per docs/experiments/2026-06-13_descriptor_literature_review.md:
   H-bonds (recomputed from geometry; renamed from bw_hb): bw_IMHB (total), bw_IMHBD/bw_IMHBA
     (distinct donors/acceptors engaged), bw_IMHB_bb/bw_IMHB_res (backbone-transannular vs
     side-chain). bb + res == IMHB.
-  surface (phys_descriptors_v3): bw_SA_HD (donor-H surface, was bw_hbd_sasa), bw_SA_HA
+  surface (descriptor_equations): bw_SA_HD (donor-H surface, was bw_hbd_sasa), bw_SA_HA
     (acceptor-atom surface), bw_hydrophobic_sasa, bw_amphi_moment
   regime-1 ensemble fluctuation: std_rg, std_asphericity, std_amphi_moment (Boltzmann-
     weighted std = configurational fluctuation amplitude), omega_circvar (backbone
@@ -42,14 +42,14 @@ would change populations off the CREMP footing; see the literature-review doc.
 
 Usage:
   # water vs chloroform (default apolar leg), GFN2 weights
-  python ensemble_descriptors.py --run-dir results/conformers/HexPep --name HexPep
+  python descriptors_calculator.py --run-dir results/conformers/HexPep --name HexPep
 
   # water vs hexane, weighted by the CPCM-X populations from the scoring run
-  python ensemble_descriptors.py --run-dir results/conformers/HexPep --apolar hexane \
+  python descriptors_calculator.py --run-dir results/conformers/HexPep --apolar hexane \
       --energies-csv results/free_energy/fe_HexPep.csv --name HexPep
 
   # several compounds into one table
-  python ensemble_descriptors.py --run-dir <dir> --name X --run-dir <dir2> --name Y -o out.csv
+  python descriptors_calculator.py --run-dir <dir> --name X --run-dir <dir2> --name Y -o out.csv
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ import pandas as pd
 from rdkit import Chem, RDLogger
 from rdkit.Chem import Descriptors3D, rdFreeSASA
 
-from phys_descriptors_v3 import (
+from descriptor_equations import (
     compute_psa_xyz, count_hbonds_xyz, boltzmann_weights,
     surface_descriptors_mol, effective_nconf, weighted_rmsf, kier_flexibility,
     imhb_descriptors_mol, backbone_hbond_atoms,
@@ -480,7 +480,7 @@ def parse_args():
                         "that run instead of the raw CREST/GFN2 energies. Conformers trimmed by "
                         "--ewin correctly get weight 0.")
     p.add_argument("--name", action="append", default=[], help="Compound name (one per --run-dir/--water-dir)")
-    p.add_argument("-o", "--out", default="results/ensemble_descriptors.csv", type=Path)
+    p.add_argument("-o", "--out", default="results/descriptors_calculator.csv", type=Path)
     return p.parse_args()
 
 

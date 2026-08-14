@@ -40,6 +40,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -161,9 +162,12 @@ def main(argv=None):
     if not water.exists():
         sys.exit(f"error: no water ensemble at {water} -- stage 1 incomplete?")
     charge = resolve_charge(args.charge, smiles, work)
+    if not chcl3 and not hexane.exists():
+        sys.exit("error: no apolar leg (chloroform or hexane) in the run dir -- need at least one "
+                 "apolar phase for dG_transfer / delta-PSA (check that stage 1 finished those legs)")
 
     # ---- stage 2: energies ---------------------------------------------------
-    fe_csv = work / "free_energy_cpcmx.csv"
+    fe_csv = work / f"free_energy_{args.method}.csv"
     if fe_csv.exists() and not args.force:
         print(f"[stage 2] skipped -- {fe_csv} exists (--force to redo)")
     else:
@@ -174,7 +178,7 @@ def main(argv=None):
             legs += ["--leg", f"hexane={hexane}"]
         run_step([sys.executable, str(SCRIPTS / "free_energy_calculator.py"),
                   "--method", args.method, "--ewin", str(args.ewin), "--ref", "water",
-                  "--charge", str(charge), "--jobs", str(args.threads or 1),
+                  "--charge", str(charge), "--jobs", str(args.threads or os.cpu_count() or 1),
                   *legs, "--out", str(fe_csv)],
                  f"Stage 2 -- {args.method.upper()} dG_transfer (charge {charge})")
 

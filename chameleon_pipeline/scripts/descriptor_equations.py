@@ -271,21 +271,23 @@ def surface_descriptors_mol(mol, conf_id: int = -1) -> dict:
             b.GetBondTypeAsDouble() == 2.0 and b.GetOtherAtom(a).GetSymbol() == "O"
             for b in a.GetBonds())
         for a in mol.GetAtoms()])
+    psa_mask = is_acceptor | is_donor_h | oxidized_s   # the 3D-PSA polar surface (reduced S excluded)
     out["total_sasa"] = round(float(sasa.sum()), 2)
-    out["psa"] = round(float(sasa[is_acceptor | is_donor_h | oxidized_s].sum()), 2)
+    out["psa"] = round(float(sasa[psa_mask].sum()), 2)
     out["hbd_sasa"] = round(float(sasa[is_donor_h].sum()), 2)   # SA_HD: donor-H surface
     out["hba_sasa"] = round(float(sasa[is_acceptor].sum()), 2)  # SA_HA: acceptor-atom surface
     out["hydrophobic_sasa"] = round(float(sasa[is_apolar].sum()), 2)
 
-    # Amphipathic moment: distance between SASA-weighted centroids of polar vs
-    # apolar surface. Large = polar/nonpolar surface is spatially segregated.
+    # Amphipathic moment: distance between SASA-weighted centroids of polar vs apolar surface.
+    # Large = polar/nonpolar surface is spatially segregated. Uses the SAME polar set as PSA
+    # (psa_mask) so "polar" means one thing across descriptors (reduced S excluded, per Ertl).
     coords = mol.GetConformer(conf_id).GetPositions()
-    out["amphi_moment"] = round(_amphi_moment(coords, sasa, is_polar, is_apolar), 3)
+    out["amphi_moment"] = round(_amphi_moment(coords, sasa, psa_mask, is_apolar), 3)
     return out
 
 
-def _amphi_moment(coords, sasa, is_polar, is_apolar) -> float:
-    wp = sasa * is_polar
+def _amphi_moment(coords, sasa, polar_mask, is_apolar) -> float:
+    wp = sasa * polar_mask
     wa = sasa * is_apolar
     sp, sa = wp.sum(), wa.sum()
     if sp <= 0 or sa <= 0:

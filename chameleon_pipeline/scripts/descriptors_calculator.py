@@ -67,7 +67,7 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import Descriptors3D, rdFreeSASA
 
 from descriptor_equations import (
-    compute_psa_xyz, count_hbonds_xyz, boltzmann_weights,
+    boltzmann_weights,
     surface_descriptors_mol, effective_nconf, weighted_rmsf, kier_flexibility,
     imhb_descriptors_mol, backbone_hbond_atoms,
 )

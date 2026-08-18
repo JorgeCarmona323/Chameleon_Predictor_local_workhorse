@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=24G
 #SBATCH --partition=all
-#SBATCH --time=12:00:00
 #
 # Task 3 — CPCM-X ΔG_transfer for Cyclosporin A (GFN-FF ensembles): water + hexane.
 # CsA is ~196 atoms, so CPCM-X single-points are much slower than HexPep; --ewin 8 pre-trims

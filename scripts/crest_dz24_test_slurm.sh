@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=32G
 #SBATCH --partition=all
-#SBATCH --time=12:00:00
 #
 # One-off test: regenerate compound 24 (Brain_6-4-4-13_diazirine) WATER leg with the current
 # pipeline, to check whether the plain N=N distance constraint holds through CREST metadynamics

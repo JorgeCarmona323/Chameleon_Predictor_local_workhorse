@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=24G
 #SBATCH --partition=all
-#SBATCH --time=12:00:00
 #
 # CPCM-X ΔG_transfer for Roxithromycin across water/chloroform/hexane. Run AFTER
 # crest_roxithromycin_gfnff_slurm.sh finishes. Geometry is GFN-FF; the CPCM-X single-points are

@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=16G
 #SBATCH --partition=all
-#SBATCH --time=04:00:00
 #
 # CPCM-X ΔG_transfer for WhC3 (White compound 3) across water/chloroform/hexane. Run AFTER
 # crest_whc3_slurm.sh finishes generating the fresh 3-solvent set. Gives water->chloroform

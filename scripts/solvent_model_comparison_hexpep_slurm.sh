@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=16G
 #SBATCH --partition=all
-#SBATCH --time=04:00:00
 #
 # Solvent-MODEL comparison on HexPep (Rezai hexamer). Score the SAME native per-phase
 # ensembles (water + hexane) with each xtb solvation model and compare the resulting

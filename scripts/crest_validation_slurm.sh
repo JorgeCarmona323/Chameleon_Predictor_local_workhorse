@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=32G
 #SBATCH --partition=all
-#SBATCH --time=24:00:00
 #SBATCH --array=0-2%2
 #
 # NMR pipeline-validation compounds: generate water/chloroform/hexane CREST ensembles for the

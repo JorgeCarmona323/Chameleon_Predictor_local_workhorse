@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=32G
 #SBATCH --partition=all
-#SBATCH --time=24:00:00
 #
 # Remake White compound 3 (WhC3) — Lokey N-methylated cyclic hexapeptide, the rigid IMHB-locked
 # permeable 6-mer (White, Nat Chem Biol 2011). The old WhC3 run (May, "mem" naming) lacked a

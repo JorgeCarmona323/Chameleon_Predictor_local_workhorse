@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=16G
 #SBATCH --partition=all
-#SBATCH --time=04:00:00
 #SBATCH --array=0-1
 #
 # CPCM-X ΔG_transfer for the two Begnini 6-mer NMR-validation compounds, all THREE solvents:

@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=16G
 #SBATCH --partition=all
-#SBATCH --time=04:00:00
 #
 # ΔG_transfer scoring — GFN2-xTB + CPCM-X single-points on the native per-phase
 # CREST ensembles (no re-search, no re-optimization).

@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=16G
 #SBATCH --partition=all
-#SBATCH --time=12:00:00
 #SBATCH --array=0-13%3
 #
 # Task 6 — CPCM-X ΔG_transfer(water -> hexane) for the 14 project hits.

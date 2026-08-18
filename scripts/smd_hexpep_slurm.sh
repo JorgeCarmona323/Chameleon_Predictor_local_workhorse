@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=16G
 #SBATCH --partition=all
-#SBATCH --time=08:00:00
 #
 # Task 9 (SMD arm) — ORCA DFT + SMD ΔG_transfer for the HexPep 6-mer, to benchmark how far
 # off xTB CPCM-X (-7.74 kcal/mol water->hexane) is. Scores the SAME CREST water/hexane/chcl3

@@ -6,7 +6,6 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=16G
 #SBATCH --partition=all
-#SBATCH --time=06:00:00
 #
 # CPCM-X ΔG_transfer for HexPep across ALL THREE solvents (water, chloroform, hexane), to complete
 # the CPCM-X-vs-SMD methods comparison. We already have CPCM-X water/hexane (-7.74); this adds the

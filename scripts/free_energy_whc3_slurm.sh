@@ -23,7 +23,7 @@ JOBS="${SLURM_CPUS_PER_TASK:-20}"
 #   WHC3_DIR=results/runs/run_..._WhC3 sbatch scripts/free_energy_whc3_slurm.sh
 # We deliberately do NOT auto-guess by folder contents — that trades predictability for magic.
 BASE="${WHC3_DIR:-}"
-[ -z "$BASE" ] && BASE=$(ls -dt -d results/runs/run_*_WhC3 results/conformers/WhC3 2>/dev/null | head -1)
+[ -z "$BASE" ] && BASE=$(ls -dt -d results/runs/run_*_WhC3 results/conformers/WhC3 2>/dev/null | head -1 || true)
 [ -n "$BASE" ] || { echo "ERROR: no WhC3 folder found (run crest_whc3_slurm.sh first, or set WHC3_DIR=<dir>)" >&2; exit 1; }
 echo "WhC3 base dir (latest timestamp): $BASE"
 

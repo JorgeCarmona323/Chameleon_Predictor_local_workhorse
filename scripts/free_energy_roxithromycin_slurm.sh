@@ -22,7 +22,7 @@ export OMP_NUM_THREADS=1
 JOBS="${SLURM_CPUS_PER_TASK:-20}"
 
 BASE="${ROXI_DIR:-}"
-[ -z "$BASE" ] && BASE=$(ls -dt -d results/runs/run_*_Roxithromycin results/conformers/Roxithromycin 2>/dev/null | head -1)
+[ -z "$BASE" ] && BASE=$(ls -dt -d results/runs/run_*_Roxithromycin results/conformers/Roxithromycin 2>/dev/null | head -1 || true)
 [ -n "$BASE" ] || { echo "ERROR: no Roxithromycin folder found (run crest_roxithromycin_gfnff_slurm.sh first, or set ROXI_DIR=<dir>)" >&2; exit 1; }
 echo "Roxithromycin base dir (latest timestamp): $BASE"
 

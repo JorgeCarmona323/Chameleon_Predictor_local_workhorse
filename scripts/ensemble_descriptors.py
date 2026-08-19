@@ -12,10 +12,11 @@ no max/min-PSA proxy). Per-solvent descriptors are Boltzmann-weighted over the r
 ensemble; cross-solvent descriptors are water − apolar differences (delta_* column names
 stay prefix-free whichever apolar phase is used).
 
-WEIGHTS — pass --energies-csv to weight by the SOLVATED single-point populations from
-free_energy_calculator.py (CPCM-X/ALPB) rather than the raw CREST/GFN2 energies. That is
-the Role-2 -> Role-3 hand-off: geometry from CREST, populations from the solvated scoring.
-Without it, weights are recomputed from the GFN2 energies in ensemble.xyz (CREMP-consistent).
+WEIGHTS — --energies-csv is REQUIRED. Descriptors are Boltzmann-weighted by the SOLVATED
+CPCM-X single-point populations from free_energy_calculator.py (stage 2). This is the
+Role-2 -> Role-3 hand-off: geometry from CREST, populations from the solvated scoring.
+There is NO ALPB/GFN2 fallback — those energies are the wrong footing for a solvated
+Boltzmann ensemble, so a missing/broken populations file is an error, not a downgrade.
 
 Reads BOTH ensemble layouts: current crest_engine.py (ensemble.sdf + ensemble.xyz +
 metadata.json) and the legacy one (ensemble.sdf + ensemble.json).
@@ -40,9 +41,10 @@ read the old names (done: plot_isomer_comparison.py).
 Regime 2 (Hessian/CENSO free-energy reweighting) is deliberately NOT applied here — it
 would change populations off the CREMP footing; see the literature-review doc.
 
-Usage:
-  # water vs chloroform (default apolar leg), GFN2 weights
-  python ensemble_descriptors.py --run-dir results/conformers/HexPep --name HexPep
+Usage (--energies-csv is REQUIRED for every run):
+  # water vs chloroform (default apolar leg), weighted by CPCM-X populations
+  python ensemble_descriptors.py --run-dir results/conformers/HexPep --name HexPep \
+      --energies-csv results/free_energy/fe_HexPep.csv
 
   # water vs hexane, weighted by the CPCM-X populations from the scoring run
   python ensemble_descriptors.py --run-dir results/conformers/HexPep --apolar hexane \
@@ -195,10 +197,10 @@ def load_ensemble(solv_dir: Path, energies_csv: Path | None = None,
       * current  (crest_engine.py): ensemble.sdf + ensemble.xyz + metadata.json
       * legacy:                     ensemble.sdf + ensemble.json (totalenergy/boltzmannweight)
 
-    Weight precedence, highest first:
-      1. `energies_csv` -> free_energy_calculator.py `pop` (CPCM-X/ALPB solvated single-points)
-      2. legacy ensemble.json `boltzmannweight`
-      3. recomputed Boltzmann weights from whatever energies were found (CREST/GFN2)
+    Weights come ONLY from the CPCM-X solvated single-point populations in `energies_csv`
+    (free_energy_calculator.py `pop`, keyed by solvent). There is NO fallback to ALPB/GFN2
+    ensemble energies -- those are the wrong footing for a solvated Boltzmann ensemble. If the
+    populations can't be loaded for a leg, this raises (stage 2 not run, or broken path).
     """
     sdf_path = solv_dir / "ensemble.sdf"
     supplier = Chem.SDMolSupplier(str(sdf_path), removeHs=False, sanitize=True)
@@ -240,17 +242,28 @@ def load_ensemble(solv_dir: Path, energies_csv: Path | None = None,
             except Exception:
                 pass
 
-    # Role-2 solvated populations take precedence when supplied
-    if energies_csv is not None and solvent_key:
-        w_csv = _pops_from_energy_csv(Path(energies_csv), solvent_key, n)
-        if w_csv is not None:
-            weights = w_csv
-
+    # Boltzmann weights MUST come from the CPCM-X solvated single-point populations
+    # (free_energy_calculator.py, stage 2). ALPB/GFN2 ensemble energies are the wrong
+    # footing for a SOLVATED Boltzmann ensemble, so there is deliberately NO fallback:
+    # if the CPCM-X populations can't be loaded, either stage 2 was not run for this leg
+    # or the energies path is broken -- both are bugs to fix, not to mask with worse weights.
+    if energies_csv is None or not solvent_key:
+        raise ValueError(
+            f"{solv_dir}: CPCM-X populations are required for weighting, but no energies CSV "
+            f"/ solvent key was provided. Run stage 2 (free_energy_calculator.py) and pass "
+            f"--energies-csv.")
+    weights = _pops_from_energy_csv(Path(energies_csv), solvent_key, n)
     if weights is None:
-        weights = np.asarray(boltzmann_weights(energies.tolist()), dtype=float)
+        raise ValueError(
+            f"{solv_dir}: could not load CPCM-X populations for solvent '{solvent_key}' from "
+            f"{energies_csv} (n_conf={n}). Either that leg was not scored in stage 2, or the "
+            f"energies path is broken (missing pop/conf/solvent columns, or a conf-index "
+            f"mismatch with ensemble.sdf). NOT falling back to ALPB weights.")
     weights = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
     total = weights.sum()
-    weights = weights / total if total > 0 else np.full(n, 1.0 / n)
+    if total <= 0:
+        raise ValueError(f"{solv_dir}: CPCM-X populations for '{solvent_key}' sum to 0.")
+    weights = weights / total
 
     return {"mols": mols, "weights": weights, "energies": energies,
             "psa_json": psa_json, "hb_json": hb_json, "smiles": smiles, "n": n}
@@ -474,11 +487,12 @@ def parse_args():
     p.add_argument("--apolar", default="chcl3",
                    help="apolar leg's folder name = its column prefix (default: chcl3; "
                         "use hexane for the hexane transfer phase)")
-    p.add_argument("--energies-csv", type=Path, default=None,
-                   help="free_energy_calculator.py per-conformer CSV. When given, descriptors "
-                        "are Boltzmann-weighted by the SOLVATED (CPCM-X/ALPB) populations from "
-                        "that run instead of the raw CREST/GFN2 energies. Conformers trimmed by "
-                        "--ewin correctly get weight 0.")
+    p.add_argument("--energies-csv", type=Path, required=True,
+                   help="REQUIRED. free_energy_calculator.py per-conformer CSV. Descriptors are "
+                        "Boltzmann-weighted by the SOLVATED CPCM-X populations from that run. "
+                        "There is no ALPB/GFN2 fallback: if a leg's populations are missing the "
+                        "run errors (stage 2 not run, or a broken energies path). Conformers "
+                        "trimmed by --ewin correctly get weight 0.")
     p.add_argument("--name", action="append", default=[], help="Compound name (one per --run-dir/--water-dir)")
     p.add_argument("-o", "--out", default="results/ensemble_descriptors.csv", type=Path)
     return p.parse_args()
@@ -496,8 +510,7 @@ def main():
         nm = args.name[offset + i] if offset + i < len(args.name) else Path(wdir).name
         jobs.append((nm, Path(wdir), None))
 
-    if args.energies_csv:
-        print(f"weighting by solvated populations from: {args.energies_csv}")
+    print(f"weighting by CPCM-X solvated populations from: {args.energies_csv}")
 
     rows = []
     for nm, wdir, mdir in jobs:

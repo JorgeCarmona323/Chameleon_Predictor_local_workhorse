@@ -31,6 +31,10 @@ Python + RDKit and run anywhere, including Windows.
 
 ### 1. Clone and create the environment
 
+> **No conda yet?** Install a clean full conda first — [Miniforge](https://github.com/conda-forge/miniforge/releases):
+> download the `Miniforge3-<your-OS>.sh` installer, run it, accept the defaults, and restart your shell.
+> (Miniforge ships a working solver and conda-forge by default, so it avoids the libmamba issue below.)
+
 ```bash
 git clone <this-repo> && cd Chameleon_Predictor
 conda env create -f environment.yml      # creates env: chameleon

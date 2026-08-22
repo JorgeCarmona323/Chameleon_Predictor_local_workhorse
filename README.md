@@ -44,10 +44,9 @@ conda activate chameleon
 > `conda config --set solver classic` then re-run `conda env create -f environment.yml`.
 > (Or repair it: `conda update -n base conda conda-libmamba-solver libmamba libmambapy`.)
 
-> **CREST version pin:** `environment.yml` requests `crest>=3.0`, but **CREST 3.x crashes
-> reproducibly** on these macrocycles during iMTD-GC. The working production pin is
-> **`crest=2.12` + `xtb=6.7.1`** (see `envs/sim.yml`, which mirrors the cluster env
-> `chameleon_crest212`). If you hit crashes, pin to 2.12.
+> **CREST version pin:** `environment.yml` is pinned to **`crest=2.12` + `xtb=6.7.1`** — the
+> confirmed-working combo (mirrors the cluster env `chameleon_crest212`). **CREST 3.x crashes
+> reproducibly** on these macrocycles during iMTD-GC, so don't bump it without re-validating.
 
 Split envs are also available if you prefer one env per role (`envs/sim.yml` = sampling,
 `envs/calc.yml` = descriptors, `envs/ml.yml` = ML); see [`docs/environments.md`](docs/environments.md).

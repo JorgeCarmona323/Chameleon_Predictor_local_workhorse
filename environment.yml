@@ -10,13 +10,12 @@ dependencies:
   - scipy>=1.10
   - scikit-learn>=1.3
   # ── Conformer sampling (Tier-2 CREST pipeline) ───────────────────────────
-  # NOTE: crest>=3.0 listed here for fresh installs. On the SDSU GPU cluster
-  # crest=2.12 was required — v3.x caused reproducible crashes during iMTD-GC
-  # runs (April 2026). A separate env 'chameleon_crest212' was created on the
-  # cluster with crest=2.12 + xtb=6.7.1 as the working production environment.
-  # If you encounter crashes with v3.x, pin to: crest=2.12
-  - crest>=3.0          # iMTD-GC conformer sampling
-  - xtb>=6.7            # GFN2-xTB semi-empirical engine + ALPB solvation (6.7.1 confirmed)
+  # PINNED to the confirmed-working combo. crest 3.x caused reproducible crashes
+  # during iMTD-GC on these macrocycles (April 2026), so fresh installs get
+  # crest=2.12 + xtb=6.7.1 — the versions in the cluster's 'chameleon_crest212'
+  # production env. Do NOT bump crest to 3.x without re-validating iMTD-GC stability.
+  - crest=2.12          # iMTD-GC conformer sampling (pinned; 3.x crashes reproducibly)
+  - xtb=6.7.1           # GFN2-xTB semi-empirical engine + ALPB solvation
   - dftd4               # DFT-D4 dispersion corrections (xTB dependency)
   - simple-dftd3        # DFT-D3 dispersion corrections (xTB dependency)
   - tblite              # tight-binding library (xTB dependency)

@@ -30,7 +30,7 @@ import crest_engine as ce
 ce.GFN_METHOD = "2"
 SMILES = "CC[C@H](C)[C@@H]1NC(=O)[C@@H]2CCCN2C(=O)[C@H](Cc2ccccc2)N(C)C(=O)[C@H](C)NC(=O)c2csc(n2)[C@H]([C@@H](C)CC)NC(=O)[C@@H]2CCCN2C1=O"
 res = ce.generate_conformers(
-    SMILES, name="Fairlie_10", outdir="results",
+    SMILES, name="Fairlie_10", outdir="results/runs",
     solvent_pairs=[("water", "water"), ("dmso", "dmso"), ("hexane", "hexane")],
     n_threads=int(sys.argv[1]))
 print("ok:", res.get("ok"), " work_dir:", res.get("work_dir"))

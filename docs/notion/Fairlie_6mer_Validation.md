@@ -1,6 +1,6 @@
 # Structural Validation of the Chameleon Pipeline — Fairlie 6-mers (+ CsA context)
 
-**Date:** 2026-08-26 · **Author:** Jorge · **Status:** complete (CPCM-X-scored)
+**Date:** 2026-08-26 · **Author:** Jorge · **Status:** diagnostic phase complete (CPCM-X-scored) — see **§9** for the roadmap (refinement closes out the tool; ML experiments decide whether training even needs it)
 
 > **TL;DR.** Against deposited NMR ensembles for two Fairlie cyclic hexapeptides (7L96, 7L98) plus CsA (11-mer), the pipeline **reproduces the backbone fold** (RMSD covers every NMR model < 2 Å; Rgyr spot-on) but **systematically under-exposes polar surface** (3D-PSA low by 17–27 Å², +1 intramolecular H-bond). The error is **systematic, directional, and grows with ring size**. A controlled re-weighting test proves it lives in **conformer *generation* (implicit solvent), not scoring** — CPCM-X populations barely move it. Crucially, the bias **does not break permeability ranking** (Test A: ρ = −0.33 pooled, −0.44 within 6-mers, N = 3,256), so for *ranking* the pipeline is usable as-is and the offset is **calibratable** — the expensive explicit-solvent fix is only needed for absolute PSA / ≥9-mers.
 
@@ -136,6 +136,16 @@ Scoring is ruled out (§4.3); the fix must change the **generated geometry**:
 - [ ] **QCG probe** on one 6-mer (§6.2) — does explicit water recover PSA? separates solvent vs GFN2.
 - [ ] **Test A, extended** — within-size Spearman on a leave-source-out split; does calibrated 3D beat 2D on chameleons specifically?
 - [ ] Run WhC3 (3-solvent ensemble in hand) through the same pipeline for the size ladder.
+
+## 9. Direction & roadmap
+
+This report closes the **diagnostic** phase. The path forward is two parallel tracks toward two large milestones.
+
+**Track 1 — close out the pipeline as a computational tool.** Adding the **r²SCAN-3c + CPCM (CENSO) refinement** stage completes a validated, end-to-end toolkit for *solid computational exploration of cyclic peptides*: **sample (CREST/GFN2) → refine (r²SCAN-3c/CPCM) → score (CPCM-X ΔG) → 3D descriptors**, benchmarked against experimental NMR ensembles. This is the version anyone can pick up and use — with the honest label that **with refinement it is medium-throughput** (reference-tier, ~days/molecule; see §1 runtime), built for careful case studies, not screening thousands. The QCG + r²SCAN-3c experiments then let us **decompose the residual error (GFN2 vs continuum)** and lock the final **conclusions & limitations / applicability domain**.
+
+**Track 2 — decide whether the *model* even needs refinement, then build it.** In parallel we **schedule the ML experiments** (extended Test A: does calibrated cheap-GFN2 descriptor ranking suffice, within-size / leave-source-out?). If the model doesn't need refined descriptors — likely, given Test A already survives the bias — then **production training stays on the cheap, high-throughput GFN2 pipeline** and refinement remains only the *validation anchor*. That clears the way to **focus on actually developing the model** (the layered predict → explain → design architecture).
+
+> **The through-line:** refinement *closes out the exploration tool* (medium-throughput, publishable); the ML experiments tell us whether we can *keep training cheap*; then we *build the model*. These are big milestones, but that is the intended direction.
 
 ---
 

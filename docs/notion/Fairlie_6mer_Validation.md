@@ -43,6 +43,11 @@ Our populated ensemble contains a conformer within ~1.5–2 Å of **every** depo
 
 → Backbone conformation and overall size are **correct**.
 
+![cmpd 4 overlay](fairlie_overlay_cmpd4.png)
+![cmpd 10 overlay](fairlie_overlay_cmpd10.png)
+
+*Ensemble overlays: experimental NMR structure (orange, thick) vs our top-12-population conformers (teal, aligned). The macrocyclic backbone tracks the experimental fold; the teal spread is our conformational ensemble.*
+
 ### 4.2 …but polar surface is systematically under-exposed (A — descriptors)
 
 | descriptor | cmpd 4 ours / exp | cmpd 10 ours / exp | CsA ours / exp |

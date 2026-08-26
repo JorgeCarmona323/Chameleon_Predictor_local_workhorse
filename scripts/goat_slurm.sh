@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=32G
 #SBATCH --partition=all
-#SBATCH --array=0-7
+#SBATCH --array=0-7%4     # %4 = at most 4 tasks running at once (throttle)
 # (no #SBATCH --time -- never cap walltime on this cluster.)
 #
 # GOAT (ORCA 6.1.1) conformer search @ GFN2-xTB + ALPB -- the GOAT-vs-CREST comparison layer.

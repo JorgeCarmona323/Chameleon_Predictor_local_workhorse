@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-26 · **Author:** Jorge · **Status:** diagnostic phase complete (CPCM-X-scored) — see **§9** for the roadmap (refinement closes out the tool; ML experiments decide whether training even needs it)
 
-> **TL;DR.** Against deposited NMR ensembles for two Fairlie cyclic hexapeptides (7L96, 7L98) plus CsA (11-mer), the pipeline **reproduces the backbone fold** (RMSD covers every NMR model < 2 Å; Rgyr spot-on) but **systematically under-exposes polar surface** (3D-PSA low by 17–27 Å², +1 intramolecular H-bond). The error is **systematic, directional, and grows with ring size**. A controlled re-weighting test proves it lives in **conformer *generation* (implicit solvent), not scoring** — CPCM-X populations barely move it. Crucially, the bias **does not break permeability ranking** (Test A: ρ = −0.33 pooled, −0.44 within 6-mers, N = 3,256), so for *ranking* the pipeline is usable as-is and the offset is **calibratable** — the expensive explicit-solvent fix is only needed for absolute PSA / ≥9-mers.
+> **TL;DR.** Against deposited NMR ensembles for two Fairlie cyclic hexapeptides (7L96, 7L98) plus CsA (11-mer), the pipeline **reproduces the backbone fold** (RMSD covers every NMR model < 2 Å; Rgyr spot-on) but **systematically under-exposes polar surface** (3D-PSA low by 17–27 Å², +1 intramolecular H-bond). The error is **systematic, directional, and grows with ring size**. A controlled re-weighting test proves it lives in **conformer *generation* (implicit solvent), not scoring** — CPCM-X populations barely move it. Whether this bias is **calibratable** for a permeability model is **not yet established**: we do not have enough own-pipeline compounds with traceable, assay-consistent PAMPA labels to test it (§4.5) — that is the next experiment, not a current claim.
 
 ---
 
@@ -84,24 +84,25 @@ Proper CPCM-X populations **barely touch** the PSA gap and don't pull the shape 
 
 Both partition favorably into the membrane-core mimic; **cmpd 10 is more membrane-favorable (−5.96 vs −5.70)**, consistent with it being the more permeable analog (PAMPA 11.0). DMSO scored cleanly under CPCM-X (it's a supported solvent), but water→DMSO is *not* a permeability signal — it exists only to weight the DMSO-ensemble descriptors that match the 7L98 structure.
 
-### 4.5 Does the bias matter for a model? (Test A — PSA vs permeability)
+### 4.5 Can we test descriptors vs permeability yet? (traceable check — N is the limit)
 
-Joined our **biased** 3D-PSA on 3,258 CREMP peptides to **CycPeptMPDB permeability** by canonical SMILES (N = 3,256 matched):
+An earlier pooled correlation (our PSA on 3,258 CREMP peptides vs CycPeptMPDB permeability) was **removed as non-defensible**: that `psa_mean` came from **CREMP's** conformers (Riniker CREST, chloroform-only) with our PSA applied **unweighted** — *not our pipeline's geometries or CPCM-X weighting* — and joined to **pooled cross-study** PAMPA. A SMILES match proves structural identity, not methodological compatibility, so that number could not test our pipeline.
 
-| descriptor (ours, biased) | Spearman ρ vs permeability |
-|---|---|
-| psa_mean | **−0.334** (p = 1.6e-85) |
-| psa_max (most-exposed conf) | **−0.396** |
-| psa_spread (ΔPSA proxy) | −0.231 |
-| imhb_bb_mean | −0.255 |
-| rg_mean | −0.046 (≈ 0 — not just "small = permeable") |
-| — *within 6-mers* | **−0.439** |
-| — *within 7-mers* | −0.233 |
-| *baseline: 2D TPSA* | −0.398 |
+What we *can* do honestly is check our **own-pipeline** compounds against **traceable** labels. Only a few qualify:
 
-![Test A](test_a_psa_vs_permeability.png)
+| compound | our ΔG(w→hex) | our PSA | measured log Papp (source studies) | n |
+|---|---|---|---|---|
+| **cmpd 4** (= MP1 / Cmpd.8 / 10j) | −5.70 | 117 | −6.00 (Wang '15), −5.89 (Hosono '20), −5.34 (10j) | 3 |
+| **CsA** | −6.82 | 85 | −5.96 (Rezai '06), −6.60 (White/Ahlbach/Hickey/…) | 2 |
+| **cmpd 10** | −5.96 | 88 | *not in CycPeptMPDB; Fairlie "11.0" is a different assay/units* | — |
 
-**The biased PSA still ranks permeability**, strongly and significantly — the systematic offset does **not** destroy the ranking (as expected for a monotonic bias). *Honest caveat:* on this **pooled** set our 3D psa_mean (−0.33) does **not** beat cheap 2D TPSA (−0.40). The 3D pipeline's value therefore is **not** pooled PSA ranking — it's (i) **within-size / chameleon** cases, (ii) **ΔG_transfer** (a signal 2D descriptors don't have), and (iii) **robustness under distribution shift** (the earlier CREMP leave-source-out result, where 2D collapses and 3D holds). Notably **psa_max** — the most-exposed conformer's polar surface — is the strongest single 3D predictor, which is mechanistically sensible (the open-state desolvation penalty governs membrane entry).
+![traceable check](permeability_traceable_check.png)
+
+**What this shows — and what it can't.** With **N = 2** on a common (log Papp) scale you cannot compute a meaningful correlation; only rank-consistency. Two honest observations:
+- The **cross-study spread within one compound (~0.65 log)** is as large as the **between-compound difference** (cmpd 4 ~−5.7 vs CsA ~−6.3) — so even the *measured* rank is shaky, which is exactly why pooled cross-study labels are unsafe.
+- Our **ΔG_transfer anti-ranks this pair**: CsA has the *more* favorable partition (−6.82) but the *lower* permeability — the textbook case that thermodynamic partition ≠ permeability (CsA's kinetic/size barrier). So ΔG alone is not a permeability ranker even on our own traceable set.
+
+**Verdict:** we do **not** yet have data to claim our descriptors rank permeability. Establishing it needs the primary experiment — run **our** CREST → CPCM-X → PSA on a **harmonized-assay** PAMPA panel at real N (§9, Track 2), preserving study-level measurements. Until then, **no calibratability claim**.
 
 ## 5. Error model (what to trust)
 
@@ -114,7 +115,7 @@ Joined our **biased** 3D-PSA on 3,258 CREMP peptides to **CycPeptMPDB permeabili
 | **absolute 3D-PSA** | ⚠️ biased low 15–27 Å² | continuum over-shielding |
 | **ΔPSA / chameleonicity** | ⚠️ compressed | dynamic range of exposure shrunk (CsA ΔPSA ~0 vs ~48) |
 | IMHB count | ⚠️ +1 | same error, counted |
-| **permeability *ranking*** | ✅ | survives the bias (Test A) |
+| **permeability *ranking*** | ❓ not yet tested | need own-pipeline descriptors + harmonized PAMPA at real N (§4.5) |
 
 **Applicability domain.** Small rings (6–7-mers): usable on **calibration**. ≥9-mers / CsA-class: implicit solvent may miss the open state entirely (a *population* failure, not just a shift) → needs explicit solvation.
 
@@ -122,7 +123,7 @@ Joined our **biased** 3D-PSA on 3,258 CREMP peptides to **CycPeptMPDB permeabili
 
 Scoring is ruled out (§4.3); the fix must change the **generated geometry**:
 
-1. **Calibrate the bias (cheapest, ML-native).** Treat the size-dependent −15→−27 Å² offset as a known correction learned from this ladder. Test A says ranking already survives → **sufficient for a ranking model.**
+1. **Calibrate the bias (cheapest, ML-native).** Treat the size-dependent −15→−27 Å² offset as a known correction learned from this ladder. **Whether calibration is sufficient for a ranking model is untested** (§4.5) — it is the hypothesis to check, not a result.
 2. **QCG micro-solvation** (`crest --qcg`, explicit water shell) — the decisive, affordable diagnostic on **one** compound. Adds the missing explicit H-bonds *and* separates "solvent model" from "GFN2 force field": if PSA opens → solvent model; if not → GFN2.
 3. **Explicit-solvent MD** (MACE-OFF + OpenMM) — physically correct, GPU-scalable; the real answer if 1–2 fall short, and the *only* route to CsA-class population failures.
 
@@ -130,7 +131,7 @@ Scoring is ruled out (§4.3); the fix must change the **generated geometry**:
 
 ## 7. Implications for model development
 
-- **Ranking model (near-term):** proceed on the biased descriptors + calibration. The bias is systematic and rank-preserving; explicit-solvent compute is **not** required to start.
+- **Ranking model (near-term):** the bias is systematic and directional, so calibration is *plausible* — but whether it preserves permeability rank is **not yet tested** (§4.5). Establish that on own-pipeline descriptors + traceable PAMPA before committing.
 - **The 3D pipeline must justify itself** where 2D can't: ΔG_transfer, within-size chameleon discrimination, and distribution-shift robustness — *not* pooled PSA correlation.
 - **Feature to prioritize:** `psa_max` / open-state exposure (strongest single 3D predictor) and ΔG_transfer.
 - **Applicability-domain gate:** flag ≥9-mer / high-flexibility inputs as outside the calibrated domain until explicit-solvent sampling is validated there.
@@ -139,7 +140,7 @@ Scoring is ruled out (§4.3); the fix must change the **generated geometry**:
 
 - [ ] **`collect_fairlie.py`** — lock this table (RMSD coverage + CREST-vs-CPCM-X descriptors + ΔG) as a one-command reproducible deliverable.
 - [ ] **QCG probe** on one 6-mer (§6.2) — does explicit water recover PSA? separates solvent vs GFN2.
-- [ ] **Test A, extended** — within-size Spearman on a leave-source-out split; does calibrated 3D beat 2D on chameleons specifically?
+- [ ] **Primary permeability test** — run our CREST→CPCM-X→PSA on a harmonized-assay PAMPA panel at real N (preserve study-level measurements); only then a defensible descriptor↔permeability correlation.
 - [ ] Run WhC3 (3-solvent ensemble in hand) through the same pipeline for the size ladder.
 
 ## 9. Direction & roadmap
@@ -148,7 +149,7 @@ This report closes the **diagnostic** phase. The path forward is two parallel tr
 
 **Track 1 — close out the pipeline as a computational tool.** Adding the **r²SCAN-3c + CPCM (CENSO) refinement** stage completes a validated, end-to-end toolkit for *solid computational exploration of cyclic peptides*: **sample (CREST/GFN2) → refine (r²SCAN-3c/CPCM) → score (CPCM-X ΔG) → 3D descriptors**, benchmarked against experimental NMR ensembles. This is the version anyone can pick up and use — with the honest label that **with refinement it is medium-throughput** (reference-tier, ~days/molecule; see §1 runtime), built for careful case studies, not screening thousands. The QCG + r²SCAN-3c experiments then let us **decompose the residual error (GFN2 vs continuum)** and lock the final **conclusions & limitations / applicability domain**.
 
-**Track 2 — decide whether the *model* even needs refinement, then build it.** In parallel we **schedule the ML experiments** (extended Test A: does calibrated cheap-GFN2 descriptor ranking suffice, within-size / leave-source-out?). If the model doesn't need refined descriptors — likely, given Test A already survives the bias — then **production training stays on the cheap, high-throughput GFN2 pipeline** and refinement remains only the *validation anchor*. That clears the way to **focus on actually developing the model** (the layered predict → explain → design architecture).
+**Track 2 — decide whether the *model* even needs refinement, then build it.** In parallel we **run the primary permeability test** — our CREST→CPCM-X→PSA on a harmonized-assay PAMPA panel at real N (study-level labels preserved). If that panel shows calibrated cheap-GFN2 descriptors rank permeability adequately, then **production training stays on the cheap, high-throughput GFN2 pipeline** and refinement remains only the *validation anchor*. That clears the way to **focus on actually developing the model** (the layered predict → explain → design architecture).
 
 > **The through-line:** refinement *closes out the exploration tool* (medium-throughput, publishable); the ML experiments tell us whether we can *keep training cheap*; then we *build the model*. These are big milestones, but that is the intended direction.
 

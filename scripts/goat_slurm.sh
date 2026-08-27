@@ -2,8 +2,9 @@
 #SBATCH --job-name=goat
 #SBATCH --output=results/slurm_logs/%x_%A_%a.out
 #SBATCH --error=results/slurm_logs/%x_%A_%a.err
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=20
+#SBATCH --nodes=1
+#SBATCH --ntasks=20
+#SBATCH --cpus-per-task=1
 #SBATCH --mem=32G
 #SBATCH --partition=all
 #SBATCH --array=0-7%4     # %4 = at most 4 tasks running at once (throttle)
@@ -24,7 +25,7 @@
 set -uo pipefail
 cd "$HOME/Chameleon_Predictor"
 mkdir -p results/goat results/slurm_logs
-JOBS="${SLURM_CPUS_PER_TASK:-20}"
+JOBS="${SLURM_NTASKS:-20}"        # ORCA nprocs = MPI ranks = SLURM tasks (not cpus-per-task)
 ORCA="$HOME/orca_6.1.1/orca_6_1_1_linux_x86-64_shared_openmpi418_nodmrg/orca"
 SEED_ENV="chameleon_crest212"        # env with RDKit + the registry (for make_goat_seed.py)
 
@@ -54,6 +55,7 @@ charge=$(echo "$seedlog" | grep -oE 'SEED_CHARGE=-?[0-9]+' | cut -d= -f2); charg
 # ---- 2) GOAT (ORCA env: censo/openmpi python + ORCA binary; ORCA's GFN2-xTB is bundled) ----
 conda activate orca
 export PATH="$(dirname "$ORCA"):$PATH"
+export OMPI_MCA_rmaps_base_oversubscribe=1     # belt-and-suspenders vs OpenMPI slot accounting under SLURM
 [ -x "$ORCA" ] || { echo "ERROR: ORCA not executable at $ORCA" >&2; exit 1; }
 
 # ORCA GOAT input (VERIFY syntax on this build; see header)

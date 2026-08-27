@@ -29,6 +29,7 @@ source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate orca                                      # CENSO 3.0.8 + OpenMPI 4.1.8
 export PATH="$(dirname "$ORCA"):$PATH"
 export OMPI_MCA_rmaps_base_oversubscribe=1               # vs OpenMPI slot accounting under SLURM
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$(dirname "$ORCA"):${LD_LIBRARY_PATH:-}"   # libmpi.so.40 from the orca env, in case any ORCA call goes MPI
 [ -x "$ORCA" ] || { echo "ERROR: ORCA not executable at $ORCA" >&2; exit 1; }
 command -v censo >/dev/null || { echo "ERROR: censo not on PATH after 'conda activate orca'" >&2; exit 1; }
 

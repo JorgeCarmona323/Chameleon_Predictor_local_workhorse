@@ -56,7 +56,11 @@ charge=$(echo "$seedlog" | grep -oE 'SEED_CHARGE=-?[0-9]+' | cut -d= -f2); charg
 conda activate orca
 export PATH="$(dirname "$ORCA"):$PATH"
 export OMPI_MCA_rmaps_base_oversubscribe=1     # belt-and-suspenders vs OpenMPI slot accounting under SLURM
+# ORCA is a *shared_openmpi418* build -> its MPI binaries (orca_util_mpi) need libmpi.so.40 from
+# the orca env's OpenMPI on LD_LIBRARY_PATH (serial jobs like SMD never needed this).
+export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$(dirname "$ORCA"):${LD_LIBRARY_PATH:-}"
 [ -x "$ORCA" ] || { echo "ERROR: ORCA not executable at $ORCA" >&2; exit 1; }
+ls "$CONDA_PREFIX"/lib/libmpi.so.40* >/dev/null 2>&1 || echo "WARN: libmpi.so.40 not in $CONDA_PREFIX/lib -- set LD_LIBRARY_PATH to wherever OpenMPI 4.1.8 lives"
 
 # ORCA GOAT input (VERIFY syntax on this build; see header)
 cat > "$work/goat.inp" <<INP

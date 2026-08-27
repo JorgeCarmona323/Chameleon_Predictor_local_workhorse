@@ -63,10 +63,12 @@ export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$(dirname "$ORCA"):${LD_LIBRARY_PATH:-
 ls "$CONDA_PREFIX"/lib/libmpi.so.40* >/dev/null 2>&1 || echo "WARN: libmpi.so.40 not in $CONDA_PREFIX/lib -- set LD_LIBRARY_PATH to wherever OpenMPI 4.1.8 lives"
 
 # GOAT @ GFN2-xTB needs an EXTERNAL xtb (this ORCA build has no bundled otool_xtb).
-export XTBEXE="$HOME/miniconda3/envs/${SEED_ENV}/bin/xtb"
-[ -x "$XTBEXE" ] || XTBEXE="$(command -v xtb 2>/dev/null || true)"
-[ -n "$XTBEXE" ] && [ -x "$XTBEXE" ] || { echo "ERROR: no xtb executable for ORCA GFN2-xTB; set XTBEXE" >&2; exit 1; }
-export PATH="$(dirname "$XTBEXE"):$PATH"        # ORCA also probes for xtb next to itself / on PATH
+# Prefer the orca env's own xtb (`conda install -n orca xtb`); fall back to the crest env's.
+XTBEXE="$(command -v xtb 2>/dev/null || true)"
+[ -n "$XTBEXE" ] && [ -x "$XTBEXE" ] || XTBEXE="$HOME/miniconda3/envs/${SEED_ENV}/bin/xtb"
+[ -x "$XTBEXE" ] || { echo "ERROR: no xtb executable for ORCA GFN2-xTB; conda install -n orca xtb, or set XTBEXE" >&2; exit 1; }
+export XTBEXE
+export PATH="$(dirname "$XTBEXE"):$PATH"        # ORCA also probes for xtb on PATH
 echo "  XTBEXE=$XTBEXE"
 
 # ORCA GOAT input (VERIFY syntax on this build; see header)

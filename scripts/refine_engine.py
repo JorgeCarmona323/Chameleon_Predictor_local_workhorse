@@ -82,6 +82,9 @@ solvent = "{solvent}"
 sm = "cpcm"
 prog = "orca"
 maxcores = {maxcores}
+omp = 1            # 1 core per ORCA job => SERIAL ORCA (no MPI); CENSO parallelizes ACROSS
+                   # conformers (maxcores/omp at once), matching this cluster's proven no-MPI
+                   # pattern (smd_hexpep_slurm.sh). VERIFY this key name on --probe.
 imagthr = -100.0
 temperature = 298.15
 

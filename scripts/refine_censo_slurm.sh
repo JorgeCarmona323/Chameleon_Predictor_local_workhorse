@@ -2,9 +2,8 @@
 #SBATCH --job-name=refine_xylene
 #SBATCH --output=results/slurm_logs/%x_%A_%a.out
 #SBATCH --error=results/slurm_logs/%x_%A_%a.err
-#SBATCH --nodes=1
-#SBATCH --ntasks=20
-#SBATCH --cpus-per-task=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=20
 #SBATCH --mem=40G
 #SBATCH --partition=all
 #SBATCH --array=0-4
@@ -20,7 +19,7 @@
 set -uo pipefail
 cd "$HOME/Chameleon_Predictor"
 mkdir -p results/slurm_logs
-JOBS="${SLURM_NTASKS:-20}"        # CENSO maxcores = MPI ranks = SLURM tasks (ORCA parallelizes over MPI)
+JOBS="${SLURM_CPUS_PER_TASK:-20}"   # CENSO runs ORCA SERIAL per conformer + parallel across conformers (no MPI), matching smd_hexpep_slurm.sh
 ORCA="$HOME/orca_6.1.1/orca_6_1_1_linux_x86-64_shared_openmpi418_nodmrg/orca"
 SOLVENT="${REFINE_SOLVENT:-chloroform}"
 

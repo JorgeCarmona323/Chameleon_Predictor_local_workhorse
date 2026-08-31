@@ -27,6 +27,7 @@ source scripts/env.sh
 source "$HOME/miniconda3/etc/profile.d/conda.sh"
 conda activate orca
 export PATH="$(dirname "$ORCA"):$PATH"
+export OMPI_MCA_rmaps_base_oversubscribe=1               # CENSO runs mpirun -np (omp-min) ORCA jobs under 1 SLURM task
 export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:$(dirname "$ORCA"):${LD_LIBRARY_PATH:-}"
 [ -x "$ORCA" ] || { echo "ERROR: ORCA not executable at $ORCA" >&2; exit 1; }
 command -v censo >/dev/null || { echo "ERROR: censo not on PATH" >&2; exit 1; }

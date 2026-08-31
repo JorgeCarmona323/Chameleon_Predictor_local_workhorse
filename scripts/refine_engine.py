@@ -22,7 +22,7 @@ key names / output filenames for this build, then adjust the three functions abo
 """
 import argparse, json, os, shutil, subprocess, sys
 from pathlib import Path
-import numpy as np
+# numpy is imported lazily inside boltzmann() so --probe works in a minimal env (no numpy needed)
 
 RT = 0.593  # kcal/mol at 298.15 K
 H2K = 627.5094740631
@@ -65,6 +65,7 @@ def write_xyz_ensemble(frames, path):
     Path(path).write_text("\n".join(out) + "\n")
 
 def boltzmann(frames):
+    import numpy as np
     E = np.array([f[3] if f[3] is not None else np.nan for f in frames], float)
     rel = (E - np.nanmin(E)) * H2K
     w = np.exp(-rel / RT); w = w / np.nansum(w)

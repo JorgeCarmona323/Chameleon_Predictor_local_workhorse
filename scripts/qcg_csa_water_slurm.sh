@@ -17,8 +17,16 @@
 #   opens  -> the fix is the SOLVENT MODEL, and cheap GFN-FF + explicit water is adequate at scale
 #   doesn't-> try a GFN2 single-point on the clusters; if THAT opens it, the force field (GFN-FF)
 #             is too crude -> need GFN2-explicit / MACE-OFF.
-# NOTE: QCG flags vary by CREST version -- VERIFY on this build first: `crest --help` (QCG section).
-#       Tunables via env: NSOLV (shell size), QMETHOD (gfnff|gfn2).
+# Flags (reconciled with this build's `crest -qcg` help):
+#   -nofix           : let the SOLUTE relax/open during growth. For WATER, CREST fixes the solute
+#                      by DEFAULT -- which would lock CsA in its closed shape and defeat the test.
+#                      -nofix is REQUIRED here so CsA can open. (This is the key correction.)
+#   -ensemble        : generate a solvated conformer ENSEMBLE (QCG Example 2).
+#   -enslvl <m>      : method for the ensemble search;  -<m> sets the growth/opt level too.
+#                      GFN-FF for CsA affordability.
+#   -nsolv <N>       : shell size; NSOLV=0 -> omit it so QCG auto-grows to convergence (maxsolv 150).
+#   (No -alpb: QCG is EXPLICIT solvent, not an implicit background.)
+#   Tunables via env: NSOLV (0=auto-grow), QMETHOD (gfnff|gfn2).
 # See data/6mer comparison/SMD_vs_implicit_analysis.md and the chameleonicity discussion.
 
 set -uo pipefail
@@ -26,7 +34,7 @@ cd "$HOME/Chameleon_Predictor"
 mkdir -p results/slurm_logs results/qcg/csa_water
 source scripts/env.sh
 JOBS="${SLURM_CPUS_PER_TASK:-20}"
-NSOLV="${NSOLV:-30}"          # explicit waters in the shell (tunable; 0 = let QCG auto-grow)
+NSOLV="${NSOLV:-40}"          # explicit waters in the shell (tunable; 0 = let QCG auto-grow to ~conv)
 QMETHOD="${QMETHOD:-gfnff}"   # gfnff (fast, scales to CsA) or gfn2
 
 WORK="results/qcg/csa_water"
@@ -49,9 +57,11 @@ H  -0.75700   0.58600   0.00000
 XYZ
 
 # 3) QCG: grow the explicit water shell + solvated ensemble.  CsA is neutral (charge 0).
-echo "===== QCG | CsA | water | $QMETHOD | nsolv=$NSOLV | $(date) ====="
-( cd "$WORK" && crest solute.xyz --qcg water.xyz --nsolv "$NSOLV" --ensemble \
-      --"$QMETHOD" --alpb water --chrg 0 --T "$JOBS" > qcg.out 2>&1 )
+#    -nofix so the solute can OPEN; explicit solvent (no -alpb); GFN-FF growth + ensemble.
+NSOLV_ARG=""; [ "${NSOLV:-0}" -gt 0 ] 2>/dev/null && NSOLV_ARG="-nsolv $NSOLV"
+echo "===== QCG | CsA | water | $QMETHOD | nsolv=${NSOLV:-auto} | -nofix | $(date) ====="
+( cd "$WORK" && crest solute.xyz -qcg water.xyz $NSOLV_ARG -nofix -ensemble \
+      -"$QMETHOD" -enslvl "$QMETHOD" -chrg 0 -T "$JOBS" > qcg.out 2>&1 )
 rc=$?
 echo "crest rc=$rc  |  log: $WORK/qcg.out"
 tail -20 "$WORK/qcg.out" 2>/dev/null

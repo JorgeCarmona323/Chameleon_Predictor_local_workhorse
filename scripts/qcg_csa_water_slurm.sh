@@ -40,7 +40,7 @@ source scripts/env.sh
 JOBS="${SLURM_CPUS_PER_TASK:-20}"
 NSOLV="${NSOLV:-40}"          # explicit waters in the shell (tunable; 0 = let QCG auto-grow to ~conv)
 QMETHOD="${QMETHOD:-gfnff}"   # gfnff (fast, scales to CsA) or gfn2
-MDTIME="${MDTIME:-100}"       # MTD time (ps); increase for a more complete ensemble on this big cluster
+MDTIME="${MDTIME:-100}"       # MTD time in ps (0 = let CREST auto-scale to system size; larger = more complete)
 
 WORK="results/qcg/csa_water"
 # 1) seed: lowest-E CsA conformer from the IMPLICIT-WATER ensemble (the wrongly-closed state).
@@ -63,10 +63,11 @@ XYZ
 
 # 3) QCG: grow the explicit water shell + solvated ensemble.  CsA is neutral (charge 0).
 #    --nofix so the solute can OPEN; --alpb water only ranks the ensemble; GFN-FF growth + ensemble.
-NSOLV_ARG=""; [ "${NSOLV:-0}" -gt 0 ] 2>/dev/null && NSOLV_ARG="--nsolv $NSOLV"
-echo "===== QCG | CsA | water | $QMETHOD | nsolv=${NSOLV:-auto} | mdtime=${MDTIME}ps | --nofix | $(date) ====="
+NSOLV_ARG="";  [ "${NSOLV:-0}"  -gt 0 ] 2>/dev/null && NSOLV_ARG="--nsolv $NSOLV"
+MDTIME_ARG=""; [ "${MDTIME:-0}" -gt 0 ] 2>/dev/null && MDTIME_ARG="--mdtime $MDTIME"
+echo "===== QCG | CsA | water | $QMETHOD | nsolv=${NSOLV:-auto} | mdtime=${MDTIME:-auto}ps | --nofix | $(date) ====="
 ( cd "$WORK" && crest solute.xyz --qcg water.xyz $NSOLV_ARG --nofix --ensemble --alpb water \
-      --wscal 1.0 --mdtime "$MDTIME" --"$QMETHOD" --enslvl "$QMETHOD" --chrg 0 --T "$JOBS" > qcg.out 2>&1 )
+      --wscal 1.0 $MDTIME_ARG --"$QMETHOD" --enslvl "$QMETHOD" --chrg 0 --T "$JOBS" > qcg.out 2>&1 )
 rc=$?
 echo "crest rc=$rc  |  log: $WORK/qcg.out"
 tail -20 "$WORK/qcg.out" 2>/dev/null

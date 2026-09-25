@@ -9,6 +9,7 @@
 !data/.gitkeep
 !data/reference_set.csv
 !data/config.json
+!data/hits_ortho_batch.csv
 !results/.gitkeep
 
 # Jupyter checkpoints

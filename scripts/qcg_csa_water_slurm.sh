@@ -38,7 +38,7 @@ cd "$HOME/Chameleon_Predictor"
 mkdir -p results/slurm_logs results/qcg/csa_water
 source scripts/env.sh
 JOBS="${SLURM_CPUS_PER_TASK:-20}"
-NSOLV="${NSOLV:-40}"          # explicit waters in the shell (tunable; 0 = let QCG auto-grow to ~conv)
+NSOLV="${NSOLV:-20}"          # explicit waters in the shell (chosen: 20 = H-bond-saturated shell; tunable; 0 = let QCG auto-grow to ~conv)
 QMETHOD="${QMETHOD:-gfnff}"   # gfnff (fast, scales to CsA) or gfn2
 MDTIME="${MDTIME:-100}"       # MTD time in ps (0 = let CREST auto-scale to system size; larger = more complete)
 

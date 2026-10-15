@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=20
 #SBATCH --mem=16G
 #SBATCH --partition=all
-#SBATCH --array=0-31%4
+#SBATCH --array=0-31%3
 #
 # SCORING-ONLY: CPCM-X ΔG_transfer(water -> hexane) for the 32 ortho 6-mer hits whose CREST
 # ensembles ALREADY EXIST on disk.  (The combined crest_fe_hits_array wrapper sampled all 32

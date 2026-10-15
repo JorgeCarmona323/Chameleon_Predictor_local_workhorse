@@ -29,7 +29,19 @@ The correct charge **strengthens** the headline (PSA/ΔG rank the DOPC-comparabl
 - Report: `data/6mer comparison/SMD_vs_implicit_analysis.md` (caveat → resolved; panel + next-steps updated)
 - Dated snapshot: `data/6mer comparison/2026-10-15_1647_charged_reanalysis/` (7 figures + 4 CSVs + report copy)
 
+## All-hits permeability ranking (done 2026-10-15)
+
+`scripts/hits_permeability_ranking.py` → `data/hits_permeability_ranking/2026-10-15/` (`all_hits_descriptors.csv` + 3 figures). Computed CPCM-X-weighted descriptors for all 32 ortho hits; ranked by PSA(hexane) and ΔG_transfer against the controls (**NC = 1-6-4-7**, **PC = 2-9-9-8 / 3-12-8-12 R,S** from the earlier xylene SMD runs, reference values).
+
+**Result — the NC anchor is excellent; the PCs sit mid-pack.**
+- **Negative-control end is clean and physically sensible.** 1-6-4-7 is the least permeable of all 32 (PSA 232, ΔG +7.4), and its two charged cysteic-acid siblings **1-8-9-2 (214, +8.4)** and **1-9-1-5 (220, +6.2)** flank it — the three −1 sulfonates form a tight impermeable cluster at the upper-right of the 2D space. **0 hits are less permeable than the NC.**
+- **Hits span a wide permeability range**, from very permeable (4-11-1-7 PSA 88, ΔG −5.3) up to the charged cluster.
+- **The PCs are not at the permeable extreme.** PC PSA band is 120–156; **18 of the remaining hits have *lower* PSA than the least-permeable PC**, and 13 fall between the PC band and the NC. So "all hits between PC and NC" holds for the NC side but not the PC side — the pipeline predicts many hits *more* permeable than 2-9-9-8 / 3-12-8-12.
+- PSA and ΔG agree in direction (both put the charged cluster at the impermeable corner), with the usual rank scatter in the middle.
+
+**Caveats:** PCs are earlier xylene runs (different provenance) used as reference; a fully consistent panel needs 2-9-9-8 / 3-12-8-12 / 6-4-4-13 re-run at scale. The NC cluster is really "the charged −1 sulfonates," so it doubles as a charge sanity check (all three correctly extreme).
+
 ## Next
 
-- **All-hits trend run (started 2026-10-15):** rank all 32 ortho hits by PSA(hexane)/ΔG_transfer with **1-6-4-7 = negative control** (least permeable) and **2-9-9-8 + 3-12-8-12 = positive controls** (most permeable); check the remaining hits fall between the controls.
-- Re-run 2-9-9-8 / 3-12-8-12 / 6-4-4-13 at scale for a fully consistent panel (currently the earlier xylene runs).
+- Re-run 2-9-9-8 / 3-12-8-12 / 6-4-4-13 at scale for a fully consistent all-hits panel (currently the earlier xylene runs).
+- With experimental permeability for any of these hits, calibrate the PSA/ΔG axis (magnitude is a free parameter; the ranking is the signal).

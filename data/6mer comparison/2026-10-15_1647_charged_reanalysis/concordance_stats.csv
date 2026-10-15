@@ -1,0 +1,29 @@
+zone,isomer,metric,spearman,kendall,pairs
+upper interface,R,Rgyr,0.6,0.333,4/6
+upper interface,R,intramol HB,0.632,0.5,4/6
+upper interface,R,backbone HB,0.4,0.333,4/6
+upper interface,R,GLOBAL Mantel (3 desc),0.113,,p=0.458
+upper interface,S,Rgyr,0.8,0.667,5/6
+upper interface,S,intramol HB,0.316,0.167,3/6
+upper interface,S,backbone HB,0.4,0.333,4/6
+upper interface,S,GLOBAL Mantel (3 desc),-0.349,,p=0.750
+hydrophobic core,R,Rgyr,0.8,0.667,5/6
+hydrophobic core,R,intramol HB,0.6,0.333,4/6
+hydrophobic core,R,backbone HB,0.316,0.167,3/6
+hydrophobic core,R,GLOBAL Mantel (3 desc),0.274,,p=0.458
+hydrophobic core,S,Rgyr,1.0,1.0,6/6
+hydrophobic core,S,intramol HB,0.8,0.667,5/6
+hydrophobic core,S,backbone HB,0.316,0.167,3/6
+hydrophobic core,S,GLOBAL Mantel (3 desc),-0.323,,p=0.708
+permeability_n4,R,PSA-water vs barrier,0.8,0.667,5/6
+permeability_DOPC_n3,R,PSA-water vs barrier (excl 6-4-4-13),1.0,,n=3
+permeability_n4,R,PSA-hexane vs barrier,0.8,0.667,5/6
+permeability_DOPC_n3,R,PSA-hexane vs barrier (excl 6-4-4-13),1.0,,n=3
+permeability_n4,R,dG vs barrier,0.4,0.333,4/6
+permeability_DOPC_n3,R,dG vs barrier (excl 6-4-4-13),1.0,,n=3
+permeability_n4,S,PSA-water vs barrier,0.8,0.667,5/6
+permeability_DOPC_n3,S,PSA-water vs barrier (excl 6-4-4-13),1.0,,n=3
+permeability_n4,S,PSA-hexane vs barrier,0.8,0.667,5/6
+permeability_DOPC_n3,S,PSA-hexane vs barrier (excl 6-4-4-13),1.0,,n=3
+permeability_n4,S,dG vs barrier,0.4,0.333,4/6
+permeability_DOPC_n3,S,dG vs barrier (excl 6-4-4-13),1.0,,n=3

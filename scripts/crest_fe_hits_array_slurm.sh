@@ -18,6 +18,12 @@
 #
 # Throttled to 3 concurrent (%3). If the CsA QCG job runs at the same time that is 4 total ->
 # either run QCG first, or resubmit this as --array=0-31%2 to stay <= 3 concurrent.
+#
+# NOTE (2026-10-15): the first submission (jobid 294578) SAMPLED all 32 correctly but a
+# PosixPath-not-str bug in the heredoc below false-failed every task BEFORE the scoring step,
+# so no fe CSV was written. Bug is fixed below (str(...)). The ensembles already on disk do
+# NOT need re-sampling -- score them with scripts/free_energy_hits_ortho_slurm.sh instead of
+# re-running this whole (days-long) wrapper.
 
 set -uo pipefail
 cd "$HOME/Chameleon_Predictor"
@@ -49,7 +55,7 @@ jobs, name, chg, smiles, wf = sys.argv[1:6]
 res = ce.generate_conformers(smiles, name=name, outdir="results/runs",
         solvent_pairs=[("water", "water"), ("hexane", "hexane")],
         charge=int(chg), n_threads=int(jobs))
-open(wf, "w").write(res.get("work_dir", "") or "")
+open(wf, "w").write(str(res.get("work_dir", "") or ""))  # str(): work_dir is a PosixPath
 print("ok:", res.get("ok"), " charge:", res.get("charge"), " work_dir:", res.get("work_dir"))
 PY
 BASE="$(cat "$WORKDIR_FILE")"; rm -f "$WORKDIR_FILE"

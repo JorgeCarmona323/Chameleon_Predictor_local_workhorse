@@ -41,6 +41,9 @@ The correct charge **strengthens** the headline (PSA/ΔG rank the DOPC-comparabl
 
 **Caveats:** PCs are earlier xylene runs (different provenance) used as reference; a fully consistent panel needs 2-9-9-8 / 3-12-8-12 / 6-4-4-13 re-run at scale. The NC cluster is really "the charged −1 sulfonates," so it doubles as a charge sanity check (all three correctly extreme).
 
+**Both legs + ΔPSA added (2026-10-15).** The ranking now emits 6 figures: PSA(hexane), PSA(water), **ΔPSA = PSA(water)−PSA(hexane)** (Boltzmann-weighted chameleonicity), ΔG_transfer, and 2D spaces (hexane + water). Descriptors come from the pipeline script `ensemble_descriptors.py` (`process_compound`); the ranking script now **caches** `all_hits_descriptors.csv` and reuses it unless `--recompute` is passed.
+- **ΔPSA view (different axis, not a permeability rank):** most chameleonic = 4-11-1-7 (87), 3-12-8-12 R (80, PC), 9-5-4-8 (70). **NC 1-6-4-7 ≈ 0** (charged sulfonate can't bury) — but **PC 2-9-9-8 ≈ 0 too** (permeable by being *constitutively* nonpolar, not chameleonic). So ΔPSA does **not** separate PC from NC; it captures mechanism, not permeability rank — consistent with the 6-mer scope (chameleonicity is a ≥9-mer story; absolute apolar-PSA dominates at small size). See [[project_dpsa_mechanism_scope]].
+
 ## Next
 
 - Re-run 2-9-9-8 / 3-12-8-12 / 6-4-4-13 at scale for a fully consistent all-hits panel (currently the earlier xylene runs).

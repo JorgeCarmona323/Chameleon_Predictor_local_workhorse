@@ -21,9 +21,13 @@ Outputs (all into  data/6mer comparison/ ): 6 figures + 4 CSVs. Pure-numpy (no s
 import csv, itertools
 from pathlib import Path
 import numpy as np
+import sys
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+sys.path.insert(0, "scripts")
+import plot_style
+plot_style.apply()
 
 OUT = Path("data/6mer comparison"); OUT.mkdir(parents=True, exist_ok=True)
 MOLS = ["2-9-9-8", "3-12-8-12", "6-4-4-13", "1-6-4-7"]      # Cmp1, Cmp2, Cmp4, Cmp3

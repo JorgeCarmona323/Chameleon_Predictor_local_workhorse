@@ -27,17 +27,20 @@ from matplotlib.lines import Line2D
 
 sys.path.insert(0, "scripts")
 import ensemble_descriptors as ed
+import plot_style
+plot_style.apply()
+from plot_style import C
 
 HT  = Path("results/conformers/hits_transfer")
 OUT = Path("data/hits_permeability_ranking/2026-10-15")
 OUT.mkdir(parents=True, exist_ok=True)
 
-# palette
-HIT   = "#3b6ea5"   # ordinary hit
-PCCOL = "#2e7d5b"   # positive control (permeable)
-NCCOL = "#a1222a"   # negative control (impermeable)
-GREYB = "#eef3f2"
-REDB  = "#faecec"
+# shared publication palette
+HIT   = C["hit"]   # ordinary hit
+PCCOL = C["pc"]    # positive control (permeable)
+NCCOL = C["nc"]    # negative control (impermeable)
+GREYB = C["band"]
+STEM  = C["stem"]
 
 NC = "1-6-4-7"
 # positive controls from the SMD analysis (earlier xylene runs; reference values).
@@ -106,31 +109,32 @@ def colors(roles):
 def lollipop(metric, label, lo_is_permeable, pc_vals, nc_val, fname, title):
     s = allf.sort_values(metric, ascending=lo_is_permeable).reset_index(drop=True)
     y = np.arange(len(s))
-    fig, ax = plt.subplots(figsize=(9.2, 10.5))
-    # reference bands: permeable (PC) zone and impermeable (NC) line
-    ax.axvspan(min(pc_vals), max(pc_vals), color=GREYB, zorder=0,
-               label="positive-control band")
-    ax.axvline(nc_val, color=NCCOL, ls="--", lw=1.4, zorder=1)
-    ax.hlines(y, min(s[metric].min(), min(pc_vals)), s[metric], color="#c9d3d1", lw=1.2, zorder=2)
-    ax.scatter(s[metric], y, c=colors(s.role), s=70, zorder=3, edgecolor="white", linewidth=0.6)
+    fig, ax = plt.subplots(figsize=(8.6, 10.8))
+    x0 = min(s[metric].min(), min(pc_vals))
+    # reference marks: positive-control band + negative-control line
+    ax.axvspan(min(pc_vals), max(pc_vals), color=GREYB, zorder=0)
+    ax.axvline(nc_val, color=NCCOL, ls=(0, (5, 3)), lw=1.3, zorder=1)
+    ax.grid(axis="x", zorder=0)
+    ax.hlines(y, x0, s[metric], color=STEM, lw=1.1, zorder=2)
+    ax.scatter(s[metric], y, c=colors(s.role), s=78, zorder=3, edgecolor="white", linewidth=0.8)
     ax.set_yticks(y)
-    ax.set_yticklabels([f"{n}" for n in s.name], fontsize=8)
-    for yi, (nm, rl) in enumerate(zip(s.name, s.role)):
+    ax.set_yticklabels(list(s.name))
+    for yi, rl in enumerate(s.role):
         if rl != "hit":
             ax.get_yticklabels()[yi].set_color(NCCOL if rl == "NC" else PCCOL)
             ax.get_yticklabels()[yi].set_fontweight("bold")
     ax.set_xlabel(label)
-    ax.set_title(title, fontsize=11)
-    ax.margins(y=0.01)
-    ax.spines[["top", "right"]].set_visible(False)
+    ax.set_title(title, loc="left", pad=12)
+    ax.set_ylim(-0.7, len(s) - 0.3)
+    ax.set_axisbelow(True)
     handles = [
         Line2D([0], [0], marker="o", color="w", markerfacecolor=PCCOL, markersize=9, label="positive control (permeable)"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor=NCCOL, markersize=9, label="negative control: 1-6-4-7 (impermeable)"),
         Line2D([0], [0], marker="o", color="w", markerfacecolor=HIT, markersize=9, label="hit"),
     ]
-    ax.legend(handles=handles, loc="lower right", fontsize=8, frameon=False)
+    ax.legend(handles=handles, loc="lower right", frameon=False)
     fig.tight_layout()
-    fig.savefig(OUT / fname, dpi=200)
+    fig.savefig(OUT / fname)
     plt.close(fig)
     return s
 
@@ -160,53 +164,53 @@ s_dpsa = lollipop("delta_psa", "ΔPSA = PSA(water) − PSA(hexane) (Å²)   ->  
 
 # Fig 3 — 2D permeability space: PSA (hexane) vs ΔG
 fig, ax = plt.subplots(figsize=(9, 7))
-ax.scatter(df.dG_transfer, df.psa_hexane, c=colors(df.role), s=80, edgecolor="white", linewidth=0.7, zorder=3)
+ax.grid(True, zorder=0); ax.set_axisbelow(True)
+ax.scatter(df.dG_transfer, df.psa_hexane, c=colors(df.role), s=85, edgecolor="white", linewidth=0.8, zorder=3)
 for _, r in df.iterrows():
     if r.role == "NC":
-        ax.annotate(r["name"] + " (NC)", (r.dG_transfer, r.psa_hexane), fontsize=9, fontweight="bold",
-                    color=NCCOL, xytext=(7, 4), textcoords="offset points")
+        ax.annotate(r["name"] + " (NC)", (r.dG_transfer, r.psa_hexane), fontweight="bold",
+                    color=NCCOL, xytext=(8, 4), textcoords="offset points")
 for k, v in PC.items():
-    ax.scatter(v["dG"], v["psa_hexane"], c=PCCOL, s=110, marker="D", edgecolor="white", linewidth=0.8, zorder=4)
-    ax.annotate(k + " (PC)", (v["dG"], v["psa_hexane"]), fontsize=9, fontweight="bold", color=PCCOL,
-                xytext=(7, 4), textcoords="offset points")
-ax.set_xlabel("ΔG_transfer water->hexane (kcal/mol)   ->   less permeable")
-ax.set_ylabel("3D-PSA, hexane leg (Å²)   ->   less permeable")
+    ax.scatter(v["dG"], v["psa_hexane"], c=PCCOL, s=120, marker="D", edgecolor="white", linewidth=0.9, zorder=4)
+    ax.annotate(k + " (PC)", (v["dG"], v["psa_hexane"]), fontweight="bold", color=PCCOL,
+                xytext=(8, 4), textcoords="offset points")
+ax.set_xlabel("ΔG_transfer water→hexane (kcal/mol)   →   less permeable")
+ax.set_ylabel("3D-PSA, hexane leg (Å²)   →   less permeable")
 ax.set_title("Permeability space: all 32 hits between the controls\n"
-             "lower-left = permeable (toward PC) · upper-right = impermeable (toward NC 1-6-4-7)", fontsize=11)
-ax.spines[["top", "right"]].set_visible(False)
+             "lower-left = permeable (toward PC) · upper-right = impermeable (toward NC 1-6-4-7)", loc="left")
 handles = [
     Line2D([0], [0], marker="D", color="w", markerfacecolor=PCCOL, markersize=10, label="positive controls (permeable)"),
     Line2D([0], [0], marker="o", color="w", markerfacecolor=NCCOL, markersize=10, label="negative control 1-6-4-7"),
     Line2D([0], [0], marker="o", color="w", markerfacecolor=HIT, markersize=10, label="hits (32)"),
 ]
-ax.legend(handles=handles, loc="upper left", fontsize=9, frameon=False)
+ax.legend(handles=handles, loc="upper left", frameon=False)
 fig.text(0.5, 0.005, "Controls from the SMD cross-check (earlier xylene runs; reference values). "
-         "1-6-4-7 is the charged (-1) re-run.", ha="center", fontsize=8, style="italic", color="#666")
+         "1-6-4-7 is the charged (−1) re-run.", ha="center", fontsize=8, style="italic", color=C["mut"])
 fig.tight_layout(rect=[0, 0.03, 1, 1])
-fig.savefig(OUT / "fig_permeability_space.png", dpi=200)
+fig.savefig(OUT / "fig_permeability_space.png")
 plt.close(fig)
 
 # Fig 3b — 2D space with the WATER-leg PSA (polar exposure) on y
 fig, ax = plt.subplots(figsize=(9, 7))
-ax.scatter(df.dG_transfer, df.psa_water, c=colors(df.role), s=80, edgecolor="white", linewidth=0.7, zorder=3)
+ax.grid(True, zorder=0); ax.set_axisbelow(True)
+ax.scatter(df.dG_transfer, df.psa_water, c=colors(df.role), s=85, edgecolor="white", linewidth=0.8, zorder=3)
 for _, r in df.iterrows():
     if r.role == "NC":
-        ax.annotate(r["name"] + " (NC)", (r.dG_transfer, r.psa_water), fontsize=9, fontweight="bold",
-                    color=NCCOL, xytext=(7, 4), textcoords="offset points")
+        ax.annotate(r["name"] + " (NC)", (r.dG_transfer, r.psa_water), fontweight="bold",
+                    color=NCCOL, xytext=(8, 4), textcoords="offset points")
 for k, v in PC.items():
-    ax.scatter(v["dG"], v["psa_water"], c=PCCOL, s=110, marker="D", edgecolor="white", linewidth=0.8, zorder=4)
-    ax.annotate(k + " (PC)", (v["dG"], v["psa_water"]), fontsize=9, fontweight="bold", color=PCCOL,
-                xytext=(7, 4), textcoords="offset points")
-ax.set_xlabel("ΔG_transfer water->hexane (kcal/mol)   ->   less permeable")
-ax.set_ylabel("3D-PSA, WATER leg (Å²)   ->   more polar-exposed in water")
+    ax.scatter(v["dG"], v["psa_water"], c=PCCOL, s=120, marker="D", edgecolor="white", linewidth=0.9, zorder=4)
+    ax.annotate(k + " (PC)", (v["dG"], v["psa_water"]), fontweight="bold", color=PCCOL,
+                xytext=(8, 4), textcoords="offset points")
+ax.set_xlabel("ΔG_transfer water→hexane (kcal/mol)   →   less permeable")
+ax.set_ylabel("3D-PSA, water leg (Å²)   →   more polar-exposed in water")
 ax.set_title("Water-leg view: aqueous polar exposure vs ΔG_transfer\n"
-             "note the chameleons: 3-12-8-12 has HIGH water PSA but low hexane PSA (opens in water, shields in membrane)", fontsize=10.5)
-ax.spines[["top", "right"]].set_visible(False)
-ax.legend(handles=handles, loc="upper left", fontsize=9, frameon=False)
+             "chameleons (e.g. 3-12-8-12 R): high water PSA but low hexane PSA — open in water, shielded in membrane", loc="left")
+ax.legend(handles=handles, loc="upper left", frameon=False)
 fig.text(0.5, 0.005, "Controls from the SMD cross-check (earlier xylene runs; reference values). "
-         "1-6-4-7 is the charged (-1) re-run.", ha="center", fontsize=8, style="italic", color="#666")
+         "1-6-4-7 is the charged (−1) re-run.", ha="center", fontsize=8, style="italic", color=C["mut"])
 fig.tight_layout(rect=[0, 0.03, 1, 1])
-fig.savefig(OUT / "fig_permeability_space_water.png", dpi=200)
+fig.savefig(OUT / "fig_permeability_space_water.png")
 plt.close(fig)
 
 # ---- console summary: where does each hit sit vs the controls? ----

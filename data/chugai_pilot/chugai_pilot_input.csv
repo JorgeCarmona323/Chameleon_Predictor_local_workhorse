@@ -1,0 +1,6 @@
+name,charge,smiles,pampa,caco2,id,len
+chugai_743,0,CC[C@H](C)[C@@H]1NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@H](C)NC(=O)CCCN(C)C(=O)C[C@H](C)NC(=O)[C@H]([C@@H](C)O)NC(=O)[C@H](Cc2ccccc2)NC(=O)[C@H](C(C)C)N(C)C(=O)[C@H](C)N(C)C(=O)[C@H](Cc2ccccc2)N(C)C1=O,-4.59,,743,10
+chugai_744,0,CC[C@H](C)[C@H]1C(=O)N[C@@H](COC(C)(C)C)C(=O)N[C@@H](C)CC(=O)N(C)[C@@H](C)C(=O)N(C)[C@@H](Cc2ccccc2)C(=O)N(C)CC(=O)N(C)[C@@H](CC(C)C)C(=O)N[C@@H]([C@@H](C)O)C(=O)N(C)[C@@H](C)C(=O)N(C)[C@@H](CC(C)C)C(=O)N1C,-4.43,,744,10
+chugai_745,0,CC[C@H](C)[C@@H]1NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@H](Cc2ccccc2)N(C)C(=O)[C@@H](C(C)C)NC(=O)C[C@H](C)NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@H](C)N(C)C(=O)[C@H]([C@@H](C)O)NC(=O)[C@H](Cc2ccccc2)N(C)C(=O)[C@H](C)N(C)C1=O,-4.39,,745,10
+chugai_783,0,CC(C)C[C@@H]1NC(=O)[C@H](CC(C)C)N(C)C(=O)[C@H](C)NC(=O)[C@H](C(C)C)N(C)C(=O)CN(C)C(=O)[C@H]([C@@H](C)O)NC(=O)[C@H](C)N(C)C(=O)[C@H](CC(C)C)N(C)C(=O)[C@@H](C)NC(=O)C[C@H](C)NC1=O,-5.7,,783,10
+chugai_792,0,CC[C@H](C)[C@H]1C(=O)NCC(=O)N(C)[C@@H](C)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](C)CC(=O)N(C)[C@@H](C)C(=O)N[C@@H](CC(C)C)C(=O)N(C)[C@@H](C)C(=O)N[C@@H]([C@@H](C)O)C(=O)N2CCC[C@H]2C(=O)N1C,-5.24,,792,10
